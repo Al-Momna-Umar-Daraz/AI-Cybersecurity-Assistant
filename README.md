@@ -1,26 +1,50 @@
 # AI Cybersecurity Assistant
 
-Professional Flask-based cybersecurity web app with:
+AI-powered cybersecurity web platform for practical analysis, training, and reporting.
+
+[![CI](https://github.com/Al-Momna-Umar-Daraz/AI-Cybersecurity-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/Al-Momna-Umar-Daraz/AI-Cybersecurity-Assistant/actions/workflows/ci.yml)
+
+## Modules
 
 - Command Analyzer
 - Password Checker
 - URL Scanner
-- Email Breach Checker (HIBP redirect flow)
+- Email Breach Checker (HIBP redirect workflow)
 - Port Scanner
 - Network Scan AI Malware Detection
 - Encryption Tools
 - Linux Command Safety Lab
-- Face Intelligence module
-- Analysis / Reports / Monetization / Settings
+- Face Intelligence
+- AI Assistant
+- Analysis Dashboard
+- Reports
+- Monetization
+- Settings & Profile
 
 ## Tech Stack
 
-- Python (Flask)
+- Python + Flask
 - SQLite
-- Vanilla JavaScript + HTML/CSS
-- PWA support (manifest + service worker)
+- HTML/CSS/JavaScript
+- Gunicorn
+- PWA (service worker + manifest)
 
-## Quick Start
+## Screenshots
+
+Add your real screenshots inside `docs/screenshots/` and update this section before university submission.
+
+Current theme preview:
+
+![Dashboard Theme](static/images/dashboard-bg.svg)
+
+Suggested screenshot files to add:
+
+- `docs/screenshots/home.png`
+- `docs/screenshots/network-scan.png`
+- `docs/screenshots/port-scan.png`
+- `docs/screenshots/analysis.png`
+
+## Local Run
 
 ```bash
 pip install -r requirements.txt
@@ -31,33 +55,49 @@ Open:
 
 - `http://127.0.0.1:5000`
 
-## Environment
+## One-Click Deployment
 
-Use `.env.example` as a base and create `.env`.
+Render:
 
-Important keys:
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Al-Momna-Umar-Daraz/AI-Cybersecurity-Assistant)
+
+Railway:
+
+- Create new project from GitHub repo: `Al-Momna-Umar-Daraz/AI-Cybersecurity-Assistant`
+- `railway.toml` and `Procfile` are included for startup config
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and set values.
+
+Required:
 
 - `FLASK_SECRET_KEY`
 - `OPENAI_API_KEY`
-- `HIBP_API_KEY` (optional, for live HIBP API mode)
-- `FACECHECK_API_TOKEN` (optional)
-- Stripe/Ads keys (optional monetization)
 
-## Production
+Optional:
 
-Deployment helpers are in:
+- `HIBP_API_KEY`
+- `FACECHECK_API_TOKEN`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_PUBLISHABLE_KEY`
+- `ADSENSE_CLIENT`
+
+## CI (Auto Update Checks)
+
+GitHub Actions workflow:
+
+- `.github/workflows/ci.yml`
+
+It runs on every push and pull request to `main`.
+
+## Deployment Docs
 
 - `deploy/DEPLOYMENT.md`
 - `deploy/launch-checklist.md`
 - `deploy/.env.production.template`
-
-## CI (Auto Checks on Every Push)
-
-This repo includes GitHub Actions workflow:
-
-- `.github/workflows/ci.yml`
-
-It runs basic Python syntax checks on pushes and pull requests.
 
 ## Author
 
