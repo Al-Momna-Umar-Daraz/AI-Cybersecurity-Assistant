@@ -3,27 +3,39 @@
 {% block content %}
 <div class="analyzer-container">
     <h1><i class="fas fa-key"></i> Encryption Tools</h1>
-    <p class="muted-text">Convert and protect text with common cryptographic utility actions.</p>
+    <p class="muted-text">Encrypt, decrypt, hash, and encode text with clear output on the same page.</p>
 
-    <div class="input-section">
+    <div class="settings-section mt-1">
+        <h3><i class="fas fa-info-circle"></i> How To Use</h3>
+        <ul class="report-threats">
+            <li>Select action (Encrypt / Decrypt / Hash / Base64).</li>
+            <li>For Encrypt/Decrypt, enter a secret key.</li>
+            <li>Click Run Tool and review output below.</li>
+        </ul>
+    </div>
+
+    <div class="input-section mt-1">
         <select id="encryptionActionInput">
+            <option value="encrypt_text">Encrypt Text (with secret key)</option>
+            <option value="decrypt_text">Decrypt Text (with secret key)</option>
             <option value="sha256">SHA-256 Hash</option>
             <option value="base64_encode">Base64 Encode</option>
             <option value="base64_decode">Base64 Decode</option>
         </select>
-        <textarea id="encryptionTextInput" placeholder="Enter text here..."></textarea>
+        <input type="password" id="encryptionSecretInput" placeholder="Secret key for encrypt/decrypt (example: MyStrongKey2026)">
+        <textarea id="encryptionTextInput" placeholder="Enter text here (for decrypt: paste encrypted token)..."></textarea>
         <button onclick="runEncryptionTool()" class="btn-analyze"><i class="fas fa-cogs"></i> Run Tool</button>
     </div>
 
-    <div id="encryptionResultSection" class="result-section hidden">
+    <div id="encryptionResultSection" class="result-section">
         <div class="threat-score">
             <div class="score-circle" id="encryptionScoreCircle"><span id="encryptionScoreValue">0</span>%</div>
             <div>
-                <div id="encryptionStatus">SAFE</div>
-                <small id="encryptionMessage" class="muted-text"></small>
+                <div id="encryptionStatus">READY</div>
+                <small id="encryptionMessage" class="muted-text">Run the selected action to see output and status.</small>
             </div>
         </div>
-        <div class="threat-details">
+        <div class="threat-details mt-1">
             <h3>Output</h3>
             <textarea id="encryptionOutput" readonly></textarea>
         </div>

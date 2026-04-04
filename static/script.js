@@ -887,12 +887,16 @@
     window.runEncryptionTool = function runEncryptionTool() {
         const action = (byId('encryptionActionInput') || {}).value || 'sha256';
         const text = (byId('encryptionTextInput') || {}).value || '';
+        const secret = (byId('encryptionSecretInput') || {}).value || '';
         if (!text.trim()) return showInvalidInput('Text is empty.');
+        if ((action === 'encrypt_text' || action === 'decrypt_text') && !secret.trim()) {
+            return showInvalidInput('Secret key is required for encrypt/decrypt.');
+        }
 
         apiFetchJson('/api/encryption-tool', {
             method: 'POST',
             headers: jsonHeaders(),
-            body: JSON.stringify({ action: action, text: text })
+            body: JSON.stringify({ action: action, text: text, secret: secret })
         })
             .then(function (data) {
                 const score = Number(data.score || 0);
@@ -905,7 +909,9 @@
                     score: score,
                     status: data.status || inferStatus(score),
                     message: data.message || 'Encryption tool operation completed.',
-                    suggestions: ['Do not treat Base64 as encryption.', 'Store sensitive hashes with salt in backend.']
+                    suggestions: action === 'encrypt_text'
+                        ? ['Store secret keys securely and never expose them in frontend logs.', 'Use unique keys for sensitive datasets.']
+                        : ['Do not treat Base64 as encryption.', 'Store sensitive hashes with salt in backend.']
                 });
                 byId('encryptionResultSection').classList.remove('hidden');
             })
@@ -1301,6 +1307,55 @@
             });
     };
 
+    window.requestPasswordCode = function requestPasswordCode() {
+        const channel = ((byId('passwordCodeChannel') || {}).value || '').trim();
+        if (!channel) return showInvalidInput('Choose code channel first.');
+
+        apiFetchJson('/api/request-password-code', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ channel: channel })
+        })
+            .then(function (data) {
+                alert(data.message || 'Verification code sent.');
+            })
+            .catch(function (err) {
+                alert((err && err.message) ? err.message : 'Could not send verification code.');
+            });
+    };
+
+    window.changePasswordWithCode = function changePasswordWithCode() {
+        const code = ((byId('passwordOtpCode') || {}).value || '').trim();
+        const newPassword = (byId('newPasswordInput') || {}).value || '';
+        const confirmPassword = (byId('confirmPasswordInput') || {}).value || '';
+
+        if (!/^\d{6}$/.test(code)) return showInvalidInput('Enter 6-digit verification code.');
+        if (newPassword.length < 8) return showInvalidInput('Password must be at least 8 characters.');
+        if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+            return showInvalidInput('Password must include uppercase, lowercase, and number.');
+        }
+        if (newPassword !== confirmPassword) return showInvalidInput('New password and confirm password do not match.');
+
+        apiFetchJson('/api/change-password-with-code', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({
+                code: code,
+                new_password: newPassword,
+                confirm_password: confirmPassword
+            })
+        })
+            .then(function (data) {
+                alert(data.message || 'Password changed successfully.');
+                if (byId('passwordOtpCode')) byId('passwordOtpCode').value = '';
+                if (byId('newPasswordInput')) byId('newPasswordInput').value = '';
+                if (byId('confirmPasswordInput')) byId('confirmPasswordInput').value = '';
+            })
+            .catch(function (err) {
+                alert((err && err.message) ? err.message : 'Unable to change password.');
+            });
+    };
+
     window.resetData = function resetData() {
         if (!confirm('Reset all reports data? This cannot be undone.')) return;
 
@@ -1421,10 +1476,19 @@
 
     function initDarkMode() {
         const darkModeCheckbox = byId('darkMode');
-        const storedDark = localStorage.getItem('darkMode') === '1';
-
-        if (storedDark) document.body.classList.add('dark-mode');
-        if (darkModeCheckbox) darkModeCheckbox.checked = storedDark || darkModeCheckbox.checked;
+        const bodyDefaultDark = document.body.classList.contains('dark-mode') || String(document.body.getAttribute('data-dark-mode') || '') === '1';
+        const stored = localStorage.getItem('darkMode');
+        let useDark = bodyDefaultDark;
+        if (stored === '1' || stored === '0') {
+            useDark = stored === '1';
+        }
+        document.body.classList.toggle('dark-mode', useDark);
+        if (darkModeCheckbox) {
+            darkModeCheckbox.checked = useDark;
+            darkModeCheckbox.addEventListener('change', function () {
+                document.body.classList.toggle('dark-mode', !!darkModeCheckbox.checked);
+            });
+        }
     }
 
     function initPwaInstall() {
@@ -1511,6 +1575,16 @@
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     if (typeof window.scanURL === 'function') window.scanURL();
+                }
+            });
+        }
+        const reportSearch = byId('reportSearch');
+        if (reportSearch && !reportSearch.dataset.boundReportEnter) {
+            reportSearch.dataset.boundReportEnter = '1';
+            reportSearch.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (typeof window.applyReportFilter === 'function') window.applyReportFilter();
                 }
             });
         }

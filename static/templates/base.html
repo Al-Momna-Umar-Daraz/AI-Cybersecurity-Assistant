@@ -14,7 +14,7 @@
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>
     {% endif %}
 </head>
-<body>
+<body{% if current_dark_mode %} class="dark-mode"{% endif %} data-dark-mode="{% if current_dark_mode %}1{% else %}0{% endif %}">
     <header class="header">
         <div class="header-left">
             <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle sidebar">
@@ -36,7 +36,6 @@
             <a href="/features/port-scan" class="nav-link"><i class="fas fa-network-wired"></i> Ports</a>
             <a href="/features/network-scan" class="nav-link"><i class="fas fa-sitemap"></i> Network</a>
             <a href="/features/encryption" class="nav-link"><i class="fas fa-key"></i> Encrypt</a>
-            <a href="/features/linux-lab" class="nav-link"><i class="fas fa-terminal"></i> Linux Lab</a>
             <a href="/features/face-intel" class="nav-link"><i class="fas fa-camera"></i> Face Intel</a>
             <a href="/features/assistant" class="nav-link"><i class="fas fa-robot"></i> AI Assistant</a>
             <a href="/analysis" class="nav-link"><i class="fas fa-chart-bar"></i> Analysis</a>
@@ -77,7 +76,6 @@
             <a href="/features/port-scan" class="sidebar-link"><i class="fas fa-network-wired"></i> Port Scanner</a>
             <a href="/features/network-scan" class="sidebar-link"><i class="fas fa-sitemap"></i> Network AI Scan</a>
             <a href="/features/encryption" class="sidebar-link"><i class="fas fa-key"></i> Encryption Tools</a>
-            <a href="/features/linux-lab" class="sidebar-link"><i class="fas fa-terminal"></i> Linux Command Lab</a>
             <a href="/features/face-intel" class="sidebar-link"><i class="fas fa-camera"></i> Face Recognition Intel</a>
             <a href="/features/assistant" class="sidebar-link"><i class="fas fa-robot"></i> AI Assistant</a>
             <a href="/features/chatbot" class="sidebar-link"><i class="fas fa-comments"></i> Chatbot</a>

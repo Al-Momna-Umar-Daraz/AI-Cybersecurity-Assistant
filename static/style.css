@@ -893,7 +893,7 @@ body.dark-mode {
     color: var(--primary);
     text-decoration: none;
 }
-:root {
+body.dark-mode {
     --bg-main: radial-gradient(circle at 15% 10%, #2d2f35 0%, #15171c 45%, #0c0d11 100%);
     --surface: rgba(24, 26, 31, 0.96);
     --surface-strong: #1d2026;
@@ -908,7 +908,7 @@ body.dark-mode {
     --shadow-card: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 
-body {
+body.dark-mode {
     background: var(--bg-main);
     background-size: 160% 160%;
     animation: bgShift 18s ease-in-out infinite;

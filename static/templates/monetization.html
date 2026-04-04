@@ -5,70 +5,32 @@
 {% block content %}
 <div class="reports-container">
     <h1><i class="fas fa-coins"></i> Monetization Center</h1>
-    <p class="muted-text">One-time credit packs + ads model is enabled so you can start earning without monthly subscriptions.</p>
+    <p class="muted-text">Subscription and in-app purchase flow is disabled. This page now focuses only on Google AdSense earning setup.</p>
 
     <div class="settings-section mt-1">
-        <h3>Wallet</h3>
-        <p><strong>Current Credits:</strong> <span id="creditBalanceValue">{{ credit_balance }}</span></p>
-        {% if stripe_enabled %}
-        <p class="safe">Stripe live checkout is enabled.</p>
+        <h3><i class="fas fa-rectangle-ad"></i> Google Ads Earning Mode</h3>
+        {% if ads_enabled %}
+        <p class="safe">AdSense script is enabled in this app.</p>
+        <p class="muted-text">Place real ad units in content sections and keep traffic policy-compliant.</p>
         {% else %}
-        <p class="warning">Stripe is not configured yet. Use simulated payment button for testing.</p>
-        {% endif %}
-        {% if pk_bank_payout_configured %}
-        <p class="safe">{{ pk_bank_name }} payout destination configured.</p>
-        {% else %}
-        <p class="warning">Pakistan bank payout details not configured yet in environment.</p>
+        <p class="warning">AdSense is not enabled yet. Add <code>ADSENSE_CLIENT</code> in <code>.env</code>.</p>
         {% endif %}
     </div>
 
-    <div class="feature-grid mt-1">
-        {% for pack in credit_packs %}
-        <div class="feature-card">
-            <i class="fas fa-wallet"></i>
-            <h3>{{ pack.title }}</h3>
-            <p>{{ pack.credits }} credits for AI + scan usage.</p>
-            <p class="safe">${{ '%.2f'|format(pack.price_usd) }} one-time</p>
-            <button type="button" class="btn btn-primary" onclick="buyCredits('{{ pack.key }}')">Buy Now</button>
-            {% if pk_bank_payout_configured %}
-            <button type="button" class="btn btn-secondary mt-1" onclick="buyViaBankTransfer('{{ pack.key }}')">Pay via Bank Transfer</button>
-            {% else %}
-            <button type="button" class="btn btn-secondary mt-1" disabled>Pay via Bank Transfer</button>
-            {% endif %}
-            <button type="button" class="btn btn-secondary mt-1" onclick="simulateCreditPurchase('{{ pack.key }}')">Test Purchase</button>
-        </div>
-        {% endfor %}
-    </div>
-
     <div class="settings-section mt-1">
-        <h3>Pakistan Bank Receiving Details</h3>
-        {% if pk_bank_payout_configured %}
+        <h3>Setup Steps</h3>
         <ul class="report-threats">
-            <li><strong>Bank:</strong> {{ pk_bank_name }}</li>
-            <li><strong>Account Title:</strong> {{ pk_account_title }}</li>
-            {% if pk_account_number %}<li><strong>Account Number:</strong> {{ pk_account_number }}</li>{% endif %}
-            {% if pk_iban %}<li><strong>IBAN:</strong> {{ pk_iban }}</li>{% endif %}
+            <li>Create/Use your Google AdSense account and add this domain in AdSense.</li>
+            <li>Set <code>ADSENSE_CLIENT=ca-pub-xxxxxxxxxxxxxxxx</code> in <code>.env</code>.</li>
+            <li>Deploy app on HTTPS domain and verify site ownership in AdSense.</li>
+            <li>Wait for review approval and policy checks before expecting revenue.</li>
+            <li>Monitor CTR, RPM, and invalid traffic warnings regularly.</li>
         </ul>
-        <p class="muted-text">User transfer reference submit karega, phir verification ke baad credits release hongay.</p>
-        {% else %}
-        <p class="warning">Set <code>PK_ACCOUNT_TITLE</code> and <code>PK_IBAN</code> in <code>.env</code> to enable real Pakistan bank receiving details.</p>
-        {% endif %}
     </div>
 
     <div class="settings-section mt-1">
-        <h3>AdSense Payment Note</h3>
-        <p class="muted-text">AdSense payout Google dashboard se set hoti hai. Yahan ki bank details app ke internal transfer mode ke liye hain.</p>
-    </div>
-
-    <div class="settings-section mt-1">
-        <h3>Real-life launch checklist</h3>
-        <ul class="report-threats">
-            <li>Connect Stripe live keys and verify webhook in production.</li>
-            <li>Add invoices and tax records.</li>
-            <li>Create legal pages (privacy policy, terms).</li>
-            <li>Enable analytics and conversion tracking.</li>
-            <li>Scale with ad placements for free-tier users.</li>
-        </ul>
+        <h3>Payout Note (Pakistan)</h3>
+        <p class="muted-text">AdSense payout account details are managed inside Google AdSense dashboard, not inside this app page.</p>
     </div>
 </div>
 {% endblock %}

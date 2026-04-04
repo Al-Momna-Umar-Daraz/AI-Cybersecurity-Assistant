@@ -39,6 +39,30 @@
         </label>
     </div>
 
+    <div class="settings-section setting-item" data-name="password reset security otp code email phone">
+        <h3>Password & Security</h3>
+        <p class="muted-text">Change password using a 6-digit verification code sent to your email or phone.</p>
+
+        <div class="input-section mt-1">
+            <select id="passwordCodeChannel">
+                <option value="email">Send code to Email ({{ current_user_email or 'not-set' }})</option>
+                <option value="phone">Send code to Phone ({{ current_user_phone or 'not-set' }})</option>
+            </select>
+            <button type="button" class="btn-secondary" onclick="requestPasswordCode()">
+                <i class="fas fa-paper-plane"></i> Send Code
+            </button>
+        </div>
+
+        <div class="input-section mt-1">
+            <input id="passwordOtpCode" type="text" maxlength="6" placeholder="Enter 6-digit code (example: 123456)">
+            <input id="newPasswordInput" type="password" placeholder="New password (At least 8 chars, A-z + 0-9)">
+            <input id="confirmPasswordInput" type="password" placeholder="Confirm new password">
+            <button type="button" class="btn-primary" onclick="changePasswordWithCode()">
+                <i class="fas fa-lock"></i> Change Password
+            </button>
+        </div>
+    </div>
+
     <div class="settings-section setting-item" data-name="data reset cache">
         <h3>Data</h3>
         <div class="settings-actions">

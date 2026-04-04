@@ -2,6 +2,7 @@
 import csv
 import base64
 import hashlib
+import hmac
 import ipaddress
 import json
 import mimetypes
@@ -71,6 +72,8 @@ PK_ACCOUNT_TITLE = os.getenv('PK_ACCOUNT_TITLE', UBL_ACCOUNT_TITLE).strip()
 PK_ACCOUNT_NUMBER = os.getenv('PK_ACCOUNT_NUMBER', UBL_ACCOUNT_NUMBER).strip()
 PK_IBAN = os.getenv('PK_IBAN', UBL_IBAN).strip()
 BANK_TRANSFER_AUTO_APPROVE = os.getenv('BANK_TRANSFER_AUTO_APPROVE', '0').strip() == '1'
+OTP_DEBUG_MODE = os.getenv('OTP_DEBUG_MODE', '1').strip() == '1'
+ADS_ONLY_MONETIZATION = os.getenv('ADS_ONLY_MONETIZATION', '1').strip() == '1'
 DANGEROUS_PORTS = {
     21: 'FTP',
     22: 'SSH',
@@ -502,6 +505,78 @@ def save_profile_image(file_storage, user_id):
     path = UPLOAD_FOLDER / name
     file_storage.save(path)
     return name, None
+
+
+def mask_email(value):
+    email = str(value or '').strip()
+    if '@' not in email:
+        return email
+    left, right = email.split('@', 1)
+    if len(left) <= 2:
+        masked = left[0] + '*' if left else '*'
+    else:
+        masked = left[:2] + '*' * max(2, len(left) - 2)
+    return f'{masked}@{right}'
+
+
+def mask_phone(value):
+    phone = normalize_phone(value)
+    if not phone:
+        return ''
+    digits = ''.join(ch for ch in phone if ch.isdigit())
+    if len(digits) <= 4:
+        return '*' * len(digits)
+    return '*' * (len(digits) - 4) + digits[-4:]
+
+
+def build_password_code(channel):
+    code = ''.join(secrets.choice('0123456789') for _ in range(6))
+    salt = secrets.token_hex(8)
+    hashed = hashlib.sha256(f'{salt}:{code}'.encode('utf-8')).hexdigest()
+    return {'code': code, 'salt': salt, 'hash': hashed, 'channel': channel}
+
+
+def _b64url_encode(data):
+    return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
+
+
+def _b64url_decode(text):
+    value = str(text or '').strip()
+    padding = '=' * ((4 - (len(value) % 4)) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def _derive_secret_key(secret, salt):
+    return hashlib.pbkdf2_hmac('sha256', str(secret).encode('utf-8'), salt, 120000, dklen=32)
+
+
+def _xor_stream(data_bytes, key_bytes):
+    output = bytearray()
+    counter = 0
+    while len(output) < len(data_bytes):
+        block = hashlib.sha256(key_bytes + counter.to_bytes(4, 'big')).digest()
+        output.extend(block)
+        counter += 1
+    return bytes(a ^ b for a, b in zip(data_bytes, output[: len(data_bytes)]))
+
+
+def encrypt_text_payload(plain_text, secret):
+    salt = secrets.token_bytes(16)
+    key = _derive_secret_key(secret, salt)
+    cipher = _xor_stream(str(plain_text).encode('utf-8'), key)
+    return f"v1.{_b64url_encode(salt)}.{_b64url_encode(cipher)}"
+
+
+def decrypt_text_payload(token, secret):
+    value = str(token or '').strip()
+    parts = value.split('.')
+    if len(parts) != 3 or parts[0] != 'v1':
+        raise ValueError('Invalid encrypted payload format.')
+    salt = _b64url_decode(parts[1])
+    cipher = _b64url_decode(parts[2])
+    key = _derive_secret_key(secret, salt)
+    plain = _xor_stream(cipher, key)
+    return plain.decode('utf-8')
 
 
 def parse_dataset_csv(csv_path):
@@ -1120,6 +1195,18 @@ def update_user_profile(user_id, name, email, phone, profile_image=None):
                 'UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?',
                 (name.strip(), email.lower().strip(), normalize_phone(phone), int(user_id)),
             )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_user_password(user_id, new_password):
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            'UPDATE users SET password_hash = ? WHERE id = ?',
+            (generate_password_hash(str(new_password)), int(user_id)),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -2197,8 +2284,15 @@ def handle_500(err):
 @app.context_processor
 def inject_globals():
     avatar_path = ''
+    current_dark_mode = False
     if g.user and g.user['profile_image']:
         avatar_path = url_for('static', filename=f"uploads/{g.user['profile_image']}")
+    if g.user:
+        try:
+            current_dark_mode = bool(get_settings_dict(int(g.user['id'])).get('dark_mode', False))
+            session['dark_mode'] = '1' if current_dark_mode else '0'
+        except Exception:
+            current_dark_mode = session.get('dark_mode', '0') == '1'
     return {
         'current_year': datetime.now().year,
         'app_brand_name': APP_BRAND_NAME,
@@ -2228,6 +2322,7 @@ def inject_globals():
         'csp_nonce': getattr(g, 'csp_nonce', ''),
         'csrf_token': get_csrf_token(),
         'static_version': build_static_version(),
+        'current_dark_mode': current_dark_mode,
     }
 
 
@@ -2499,8 +2594,20 @@ def analysis():
     keyword = request.args.get('q', '').strip()
     if report_filter not in {'all', 'today', 'week'}:
         report_filter = 'all'
-
-    summary = get_analysis_summary(int(g.user['id']), report_filter, keyword)
+    try:
+        summary = get_analysis_summary(int(g.user['id']), report_filter, keyword)
+    except Exception:
+        summary = {
+            'total_scans': 0,
+            'avg_threat_score': 0,
+            'safe_percent': 0,
+            'warning_percent': 0,
+            'dangerous_percent': 0,
+            'status_counts': {'SAFE': 0, 'WARNING': 0, 'DANGEROUS': 0},
+            'type_counts': {'command': 0, 'password': 0, 'url': 0, 'breach': 0, 'portscan': 0, 'network': 0, 'encryption': 0, 'linux': 0, 'facecheck': 0},
+            'type_risk': {'command': 0, 'password': 0, 'url': 0, 'breach': 0, 'portscan': 0, 'network': 0, 'encryption': 0, 'linux': 0, 'facecheck': 0},
+            'trend': {'labels': [], 'values': []},
+        }
     return render_template('analysis.html', summary=summary, report_filter=report_filter, keyword=keyword)
 
 
@@ -2512,14 +2619,21 @@ def reports():
     if report_filter not in {'all', 'today', 'week'}:
         report_filter = 'all'
 
-    reports_data = get_scan_reports(int(g.user['id']), report_filter, keyword)
+    try:
+        reports_data = get_scan_reports(int(g.user['id']), report_filter, keyword)
+    except Exception:
+        reports_data = []
     return render_template('reports.html', reports=reports_data, report_filter=report_filter, keyword=keyword)
 
 
 @app.route('/settings')
 @login_required
 def settings():
-    return render_template('settings.html', settings_data=get_settings_dict(int(g.user['id'])))
+    try:
+        settings_data = get_settings_dict(int(g.user['id']))
+    except Exception:
+        settings_data = {'dark_mode': False, 'threat_alerts': True, 'scan_complete': True, 'auto_refresh': True}
+    return render_template('settings.html', settings_data=settings_data)
 
 
 @app.route('/profile', methods=['GET', 'POST'])
@@ -2564,11 +2678,20 @@ def profile():
 @app.route('/monetization')
 @login_required
 def monetization():
+    if ADS_ONLY_MONETIZATION:
+        return render_template(
+            'monetization.html',
+            credit_packs=[],
+            credit_balance=0,
+            stripe_enabled=False,
+            ads_only_mode=True,
+        )
     return render_template(
         'monetization.html',
         credit_packs=get_credit_packs(),
         credit_balance=get_user_credit_balance(int(g.user['id'])),
         stripe_enabled=is_stripe_enabled(),
+        ads_only_mode=False,
     )
 
 
@@ -2674,6 +2797,8 @@ def credit_packs_api():
 @app.route('/api/create-payment', methods=['POST'])
 @api_login_required
 def create_payment_api():
+    if ADS_ONLY_MONETIZATION:
+        return jsonify({'ok': False, 'message': 'Credit purchase is disabled in Ads-only mode.'}), 403
     payload = request.json or {}
     pack_key = (payload.get('pack_key') or '').strip()
     pack = get_credit_pack(pack_key)
@@ -2729,6 +2854,8 @@ def create_payment_api():
 @app.route('/api/simulate-payment', methods=['POST'])
 @api_login_required
 def simulate_payment_api():
+    if ADS_ONLY_MONETIZATION:
+        return jsonify({'ok': False, 'message': 'Simulated purchase is disabled in Ads-only mode.'}), 403
     payload = request.json or {}
     pack_key = (payload.get('pack_key') or '').strip()
     pack = get_credit_pack(pack_key)
@@ -2752,6 +2879,8 @@ def simulate_payment_api():
 @app.route('/api/create-bank-transfer', methods=['POST'])
 @api_login_required
 def create_bank_transfer_api():
+    if ADS_ONLY_MONETIZATION:
+        return jsonify({'ok': False, 'message': 'Bank transfer purchase is disabled in Ads-only mode.'}), 403
     payload = request.json or {}
     pack_key = (payload.get('pack_key') or '').strip()
     transfer_ref = (payload.get('transfer_ref') or '').strip()
@@ -2822,14 +2951,30 @@ def analysis_summary_api():
     keyword = request.args.get('q', '').strip()
     if report_filter not in {'all', 'today', 'week'}:
         report_filter = 'all'
-    return jsonify(get_analysis_summary(int(g.user['id']), report_filter, keyword))
+    try:
+        return jsonify(get_analysis_summary(int(g.user['id']), report_filter, keyword))
+    except Exception:
+        return jsonify({
+            'total_scans': 0,
+            'avg_threat_score': 0,
+            'safe_percent': 0,
+            'warning_percent': 0,
+            'dangerous_percent': 0,
+            'status_counts': {'SAFE': 0, 'WARNING': 0, 'DANGEROUS': 0},
+            'type_counts': {'command': 0, 'password': 0, 'url': 0, 'breach': 0, 'portscan': 0, 'network': 0, 'encryption': 0, 'linux': 0, 'facecheck': 0},
+            'type_risk': {'command': 0, 'password': 0, 'url': 0, 'breach': 0, 'portscan': 0, 'network': 0, 'encryption': 0, 'linux': 0, 'facecheck': 0},
+            'trend': {'labels': [], 'values': []},
+        })
 
 
 @app.route('/api/settings', methods=['GET', 'POST'])
 @api_login_required
 def settings_api():
     if request.method == 'GET':
-        return jsonify(get_settings_dict(int(g.user['id'])))
+        try:
+            return jsonify(get_settings_dict(int(g.user['id'])))
+        except Exception:
+            return jsonify({'dark_mode': False, 'threat_alerts': True, 'scan_complete': True, 'auto_refresh': True})
 
     payload = request.json or {}
     data = {
@@ -2839,15 +2984,105 @@ def settings_api():
         'auto_refresh': bool(payload.get('auto_refresh', True)),
     }
 
-    conn = get_db_connection()
-    user_id = int(g.user['id'])
-    set_setting(conn, user_id, 'dark_mode', '1' if data['dark_mode'] else '0')
-    set_setting(conn, user_id, 'threat_alerts', '1' if data['threat_alerts'] else '0')
-    set_setting(conn, user_id, 'scan_complete', '1' if data['scan_complete'] else '0')
-    set_setting(conn, user_id, 'auto_refresh', '1' if data['auto_refresh'] else '0')
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        user_id = int(g.user['id'])
+        set_setting(conn, user_id, 'dark_mode', '1' if data['dark_mode'] else '0')
+        set_setting(conn, user_id, 'threat_alerts', '1' if data['threat_alerts'] else '0')
+        set_setting(conn, user_id, 'scan_complete', '1' if data['scan_complete'] else '0')
+        set_setting(conn, user_id, 'auto_refresh', '1' if data['auto_refresh'] else '0')
+        conn.commit()
+        conn.close()
+    except Exception:
+        # Keep UI preference functional even if DB is temporarily unavailable.
+        pass
+    session['dark_mode'] = '1' if data['dark_mode'] else '0'
     return jsonify({'success': True, 'settings': data})
+
+
+@app.route('/api/request-password-code', methods=['POST'])
+@api_login_required
+def request_password_code_api():
+    payload = request.json or {}
+    channel = str(payload.get('channel') or '').strip().lower()
+    if channel not in {'email', 'phone'}:
+        return jsonify({'ok': False, 'message': 'Choose email or phone for code delivery.'}), 400
+
+    destination = ''
+    masked = ''
+    if channel == 'email':
+        destination = str(g.user['email'] or '').strip().lower()
+        if not destination or '@' not in destination:
+            return jsonify({'ok': False, 'message': 'No valid email found on profile.'}), 400
+        masked = mask_email(destination)
+    else:
+        destination = normalize_phone(g.user['phone'] or '')
+        if not destination:
+            return jsonify({'ok': False, 'message': 'No valid phone found on profile.'}), 400
+        masked = mask_phone(destination)
+
+    bundle = build_password_code(channel)
+    session['pwd_reset'] = {
+        'channel': channel,
+        'destination': destination,
+        'salt': bundle['salt'],
+        'hash': bundle['hash'],
+        'attempts': 0,
+        'expires_at': int(time.time()) + 10 * 60,
+    }
+
+    message = f'Code sent to your {channel}: {masked}.'
+    if OTP_DEBUG_MODE:
+        message += f' Demo code: {bundle["code"]}'
+
+    return jsonify({'ok': True, 'message': message, 'channel': channel})
+
+
+@app.route('/api/change-password-with-code', methods=['POST'])
+@api_login_required
+def change_password_with_code_api():
+    payload = request.json or {}
+    code = str(payload.get('code') or '').strip()
+    new_password = str(payload.get('new_password') or '')
+    confirm_password = str(payload.get('confirm_password') or '')
+
+    flow = session.get('pwd_reset') or {}
+    if not flow:
+        return jsonify({'ok': False, 'message': 'Request a verification code first.'}), 400
+
+    now_ts = int(time.time())
+    if int(flow.get('expires_at', 0)) < now_ts:
+        session.pop('pwd_reset', None)
+        return jsonify({'ok': False, 'message': 'Code expired. Request a new code.'}), 400
+
+    attempts = int(flow.get('attempts', 0))
+    if attempts >= 6:
+        session.pop('pwd_reset', None)
+        return jsonify({'ok': False, 'message': 'Too many attempts. Request a new code.'}), 429
+
+    if len(code) != 6 or not code.isdigit():
+        flow['attempts'] = attempts + 1
+        session['pwd_reset'] = flow
+        return jsonify({'ok': False, 'message': 'Invalid code format. Enter 6 digits.'}), 400
+
+    if new_password != confirm_password:
+        return jsonify({'ok': False, 'message': 'New password and confirm password do not match.'}), 400
+    if len(new_password) < 8:
+        return jsonify({'ok': False, 'message': 'Password must be at least 8 characters.'}), 400
+    if re.search(r'[a-z]', new_password) is None or re.search(r'[A-Z]', new_password) is None or re.search(r'\d', new_password) is None:
+        return jsonify({'ok': False, 'message': 'Password must include uppercase, lowercase, and number.'}), 400
+
+    expected = str(flow.get('hash') or '')
+    salt = str(flow.get('salt') or '')
+    provided = hashlib.sha256(f'{salt}:{code}'.encode('utf-8')).hexdigest()
+    if not expected or not hmac.compare_digest(expected, provided):
+        flow['attempts'] = attempts + 1
+        session['pwd_reset'] = flow
+        return jsonify({'ok': False, 'message': 'Incorrect verification code.'}), 400
+
+    update_user_password(int(g.user['id']), new_password)
+    session.pop('pwd_reset', None)
+    return jsonify({'ok': True, 'message': 'Password changed successfully.'})
 
 
 @app.route('/api/reports/reset', methods=['POST'])
@@ -3028,6 +3263,7 @@ def network_scan_api():
 def encryption_tool_api():
     data = request.json or {}
     text = data.get('text', '')
+    secret = data.get('secret', '')
     action = (data.get('action') or '').strip().lower()
     if not action:
         return jsonify({'ok': False, 'message': 'Action is required.'}), 400
@@ -3045,6 +3281,18 @@ def encryption_tool_api():
             output = base64.b64decode(str(text).encode('utf-8'), validate=True).decode('utf-8')
             score = 20
             threats = ['Decoded Base64 data. Verify source trust before use.']
+        elif action == 'encrypt_text':
+            if not str(secret).strip():
+                return jsonify({'ok': False, 'message': 'Secret key is required for encryption.'}), 400
+            output = encrypt_text_payload(str(text), str(secret))
+            score = 12
+            threats = ['Encrypted text payload generated with secret key.']
+        elif action == 'decrypt_text':
+            if not str(secret).strip():
+                return jsonify({'ok': False, 'message': 'Secret key is required for decryption.'}), 400
+            output = decrypt_text_payload(str(text), str(secret))
+            score = 18
+            threats = ['Encrypted payload was decrypted using provided secret key.']
         else:
             return jsonify({'ok': False, 'message': 'Unsupported action.'}), 400
     except Exception:
@@ -3059,7 +3307,16 @@ def encryption_tool_api():
         threats,
     )
 
-    return jsonify({'ok': True, 'status': 'SAFE', 'score': score, 'output': output, 'message': 'Operation complete.'})
+    return jsonify(
+        {
+            'ok': True,
+            'status': 'SAFE' if score < 30 else 'WARNING',
+            'score': score,
+            'output': output,
+            'message': 'Operation complete.',
+            'action': action,
+        }
+    )
 
 
 @app.route('/api/linux-lab', methods=['POST'])
