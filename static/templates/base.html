@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token }}">
-    <meta name="theme-color" content="#f5b301">
+    <meta name="theme-color" content="#22c55e">
     <link rel="manifest" href="/manifest.webmanifest">
     <title>{% block title %}{{ app_brand_name }}{% endblock %}</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -20,6 +20,14 @@
             <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle sidebar">
                 <i class="fas fa-bars"></i>
             </button>
+            <div class="history-nav">
+                <button class="history-btn" id="historyBackBtn" type="button" aria-label="Back (Undo)">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <button class="history-btn" id="historyForwardBtn" type="button" aria-label="Forward (Redo)">
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
             <div class="logo">
                 <i class="fas fa-shield-alt"></i>
                 <span>{{ app_brand_name }}</span>
@@ -38,20 +46,38 @@
             <a href="/features/encryption" class="nav-link"><i class="fas fa-key"></i> Encrypt</a>
             <a href="/features/face-intel" class="nav-link"><i class="fas fa-camera"></i> Face Intel</a>
             <a href="/features/assistant" class="nav-link"><i class="fas fa-robot"></i> AI Assistant</a>
-            <a href="/analysis" class="nav-link"><i class="fas fa-chart-bar"></i> Analysis</a>
-            <a href="/reports" class="nav-link"><i class="fas fa-file-alt"></i> Reports</a>
-            <a href="/monetization" class="nav-link"><i class="fas fa-coins"></i> Monetize</a>
-            <a href="/settings" class="nav-link"><i class="fas fa-cog"></i> Settings</a>
-            <a href="/profile" class="nav-link nav-user">
-                {% if current_user_avatar %}
-                <img src="{{ current_user_avatar }}" alt="Profile" class="avatar-sm">
-                {% else %}
-                <i class="fas fa-user"></i>
-                {% endif %}
-                {{ current_user_name }}
-            </a>
+            <div class="top-more-wrap">
+                <button id="topMoreBtn" class="nav-link more-btn" type="button" aria-expanded="false" aria-controls="topMorePanel">
+                    <i class="fas fa-bars"></i> More
+                </button>
+                <div id="topMorePanel" class="top-more-panel hidden" aria-hidden="true">
+                    <div class="top-more-head">
+                        <strong><i class="fas fa-sliders-h"></i> More Options</strong>
+                        <button id="topMoreClose" type="button" class="top-more-close" aria-label="Close options">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <label class="toggle top-more-toggle">
+                        <span><i class="fas fa-moon"></i> Dark Mode</span>
+                        <input type="checkbox" id="quickDarkToggle" {% if current_dark_mode %}checked{% endif %}>
+                        <span class="slider"></span>
+                    </label>
+                    <a href="/analysis" class="top-more-link"><i class="fas fa-chart-bar"></i> Analysis</a>
+                    <a href="/reports" class="top-more-link"><i class="fas fa-file-alt"></i> Reports</a>
+                    <a href="/monetization" class="top-more-link"><i class="fas fa-coins"></i> Monetize</a>
+                    <a href="/settings" class="top-more-link"><i class="fas fa-cog"></i> Settings</a>
+                    <a href="/profile" class="top-more-link">
+                        {% if current_user_avatar %}
+                        <img src="{{ current_user_avatar }}" alt="Profile" class="avatar-sm">
+                        {% else %}
+                        <i class="fas fa-user"></i>
+                        {% endif %}
+                        {{ current_user_name }}
+                    </a>
+                    <a href="/logout" class="top-more-link danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </div>
+            </div>
             <button id="installAppBtn" class="nav-link install-btn hidden" type="button"><i class="fas fa-download"></i> Install App</button>
-            <a href="/logout" class="nav-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
             {% else %}
             <a href="/login" class="nav-link"><i class="fas fa-sign-in-alt"></i> Login</a>
             <a href="/register" class="nav-link"><i class="fas fa-user-plus"></i> Register</a>
@@ -63,11 +89,17 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-top">
                 <h3><i class="fas fa-tools"></i> Quick Tools</h3>
-                <button class="sidebar-close" id="sidebarClose" type="button" aria-label="Close sidebar">
-                    <i class="fas fa-times"></i>
-                </button>
+                <div class="sidebar-actions">
+                    <button class="sidebar-close" id="quickToolsToggle" type="button" aria-label="Collapse quick tools" aria-expanded="true">
+                        <i class="fas fa-chevron-up"></i>
+                    </button>
+                    <button class="sidebar-close" id="sidebarClose" type="button" aria-label="Close sidebar">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
             </div>
 
+            <div id="quickToolsList" class="quick-tools-list">
             {% if logged_in %}
             <a href="/features/command" class="sidebar-link"><i class="fas fa-terminal"></i> Command Analyzer</a>
             <a href="/features/password" class="sidebar-link"><i class="fas fa-lock"></i> Password Checker</a>
@@ -92,6 +124,7 @@
             <a href="/login" class="sidebar-link"><i class="fas fa-sign-in-alt"></i> Login</a>
             <a href="/register" class="sidebar-link"><i class="fas fa-user-plus"></i> Create Account</a>
             {% endif %}
+            </div>
         </aside>
 
         <main class="content">
@@ -144,3 +177,4 @@
     {% block scripts %}{% endblock %}
 </body>
 </html>
+

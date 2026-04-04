@@ -560,23 +560,50 @@ def _xor_stream(data_bytes, key_bytes):
     return bytes(a ^ b for a, b in zip(data_bytes, output[: len(data_bytes)]))
 
 
+def _payload_mac(key_bytes, salt_token, cipher_token):
+    message = f'v2|{salt_token}|{cipher_token}'.encode('utf-8')
+    digest = hmac.new(key_bytes, message, hashlib.sha256).digest()
+    return _b64url_encode(digest)
+
+
 def encrypt_text_payload(plain_text, secret):
     salt = secrets.token_bytes(16)
     key = _derive_secret_key(secret, salt)
     cipher = _xor_stream(str(plain_text).encode('utf-8'), key)
-    return f"v1.{_b64url_encode(salt)}.{_b64url_encode(cipher)}"
+    salt_token = _b64url_encode(salt)
+    cipher_token = _b64url_encode(cipher)
+    mac_token = _payload_mac(key, salt_token, cipher_token)
+    return f"v2.{salt_token}.{cipher_token}.{mac_token}"
 
 
 def decrypt_text_payload(token, secret):
     value = str(token or '').strip()
     parts = value.split('.')
-    if len(parts) != 3 or parts[0] != 'v1':
-        raise ValueError('Invalid encrypted payload format.')
-    salt = _b64url_decode(parts[1])
-    cipher = _b64url_decode(parts[2])
-    key = _derive_secret_key(secret, salt)
-    plain = _xor_stream(cipher, key)
-    return plain.decode('utf-8')
+    if len(parts) == 4 and parts[0] == 'v2':
+        salt = _b64url_decode(parts[1])
+        cipher = _b64url_decode(parts[2])
+        key = _derive_secret_key(secret, salt)
+        expected_mac = _payload_mac(key, parts[1], parts[2])
+        provided_mac = str(parts[3] or '')
+        if not hmac.compare_digest(expected_mac, provided_mac):
+            raise ValueError('Invalid secret key or tampered encrypted payload.')
+        plain = _xor_stream(cipher, key)
+        try:
+            return plain.decode('utf-8')
+        except Exception as exc:
+            raise ValueError('Unable to decrypt payload. Secret key may be incorrect.') from exc
+
+    if len(parts) == 3 and parts[0] == 'v1':
+        salt = _b64url_decode(parts[1])
+        cipher = _b64url_decode(parts[2])
+        key = _derive_secret_key(secret, salt)
+        plain = _xor_stream(cipher, key)
+        try:
+            return plain.decode('utf-8')
+        except Exception as exc:
+            raise ValueError('Unable to decrypt payload. Secret key may be incorrect.') from exc
+
+    raise ValueError('Invalid encrypted payload format.')
 
 
 def parse_dataset_csv(csv_path):
@@ -626,7 +653,7 @@ def set_setting(conn, user_id, key, value):
 
 def ensure_user_default_settings(conn, user_id):
     default_settings = {
-        'dark_mode': '0',
+        'dark_mode': '1',
         'threat_alerts': '1',
         'scan_complete': '1',
         'auto_refresh': '1',
@@ -2111,7 +2138,7 @@ def get_settings_dict(user_id):
     conn.close()
     settings = {row['setting_key']: row['setting_value'] for row in rows}
     return {
-        'dark_mode': settings.get('dark_mode', '0') == '1',
+        'dark_mode': settings.get('dark_mode', '1') == '1',
         'threat_alerts': settings.get('threat_alerts', '1') == '1',
         'scan_complete': settings.get('scan_complete', '1') == '1',
         'auto_refresh': settings.get('auto_refresh', '1') == '1',
@@ -2284,7 +2311,7 @@ def handle_500(err):
 @app.context_processor
 def inject_globals():
     avatar_path = ''
-    current_dark_mode = False
+    current_dark_mode = True
     if g.user and g.user['profile_image']:
         avatar_path = url_for('static', filename=f"uploads/{g.user['profile_image']}")
     if g.user:
@@ -2632,7 +2659,7 @@ def settings():
     try:
         settings_data = get_settings_dict(int(g.user['id']))
     except Exception:
-        settings_data = {'dark_mode': False, 'threat_alerts': True, 'scan_complete': True, 'auto_refresh': True}
+        settings_data = {'dark_mode': True, 'threat_alerts': True, 'scan_complete': True, 'auto_refresh': True}
     return render_template('settings.html', settings_data=settings_data)
 
 
@@ -2974,7 +3001,7 @@ def settings_api():
         try:
             return jsonify(get_settings_dict(int(g.user['id'])))
         except Exception:
-            return jsonify({'dark_mode': False, 'threat_alerts': True, 'scan_complete': True, 'auto_refresh': True})
+            return jsonify({'dark_mode': True, 'threat_alerts': True, 'scan_complete': True, 'auto_refresh': True})
 
     payload = request.json or {}
     data = {
@@ -2998,6 +3025,22 @@ def settings_api():
         pass
     session['dark_mode'] = '1' if data['dark_mode'] else '0'
     return jsonify({'success': True, 'settings': data})
+
+
+@app.route('/api/theme', methods=['POST'])
+@api_login_required
+def theme_api():
+    payload = request.json or {}
+    dark_mode = bool(payload.get('dark_mode', True))
+    try:
+        conn = get_db_connection()
+        set_setting(conn, int(g.user['id']), 'dark_mode', '1' if dark_mode else '0')
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    session['dark_mode'] = '1' if dark_mode else '0'
+    return jsonify({'ok': True, 'dark_mode': dark_mode})
 
 
 @app.route('/api/request-password-code', methods=['POST'])
@@ -3262,59 +3305,103 @@ def network_scan_api():
 @api_login_required
 def encryption_tool_api():
     data = request.json or {}
-    text = data.get('text', '')
-    secret = data.get('secret', '')
+    text = str(data.get('text', ''))
+    secret = str(data.get('secret', ''))
     action = (data.get('action') or '').strip().lower()
     if not action:
         return jsonify({'ok': False, 'message': 'Action is required.'}), 400
+    if not text.strip():
+        return jsonify({'ok': False, 'message': 'Input text is required.'}), 400
+    if len(text) > 20000:
+        return jsonify({'ok': False, 'message': 'Input is too long. Maximum allowed is 20,000 characters.'}), 400
 
     try:
         if action == 'sha256':
-            output = hashlib.sha256(str(text).encode('utf-8')).hexdigest()
+            output = hashlib.sha256(text.encode('utf-8')).hexdigest()
             score = 5
-            threats = ['Generated SHA-256 hash.']
+            operation_label = 'SHA-256 Hash'
+            message = 'SHA-256 hash generated successfully.'
+            notes = [
+                'SHA-256 is one-way hashing and cannot be reversed.',
+                'For passwords, always use strong salted password hashing on backend.',
+            ]
         elif action == 'base64_encode':
-            output = base64.b64encode(str(text).encode('utf-8')).decode('utf-8')
+            output = base64.b64encode(text.encode('utf-8')).decode('utf-8')
             score = 10
-            threats = ['Encoded text with Base64.']
+            operation_label = 'Base64 Encode'
+            message = 'Base64 encoding completed.'
+            notes = [
+                'Base64 is encoding only, not encryption.',
+                'Use proper encryption for sensitive data.',
+            ]
         elif action == 'base64_decode':
-            output = base64.b64decode(str(text).encode('utf-8'), validate=True).decode('utf-8')
+            cleaned_text = re.sub(r'\s+', '', text)
+            output = base64.b64decode(cleaned_text.encode('utf-8'), validate=True).decode('utf-8')
             score = 20
-            threats = ['Decoded Base64 data. Verify source trust before use.']
+            operation_label = 'Base64 Decode'
+            message = 'Base64 decoding completed.'
+            notes = [
+                'Decoded output may contain unsafe content. Review before use.',
+                'Only decode data from trusted sources.',
+            ]
         elif action == 'encrypt_text':
-            if not str(secret).strip():
+            if not secret.strip():
                 return jsonify({'ok': False, 'message': 'Secret key is required for encryption.'}), 400
-            output = encrypt_text_payload(str(text), str(secret))
+            if len(secret.strip()) < 6:
+                return jsonify({'ok': False, 'message': 'Secret key must be at least 6 characters.'}), 400
+            output = encrypt_text_payload(text, secret)
             score = 12
-            threats = ['Encrypted text payload generated with secret key.']
+            operation_label = 'Encrypt Text'
+            message = 'Text encrypted successfully.'
+            notes = [
+                'Store secret keys securely and never expose them in frontend logs.',
+                'Use separate secrets per environment and rotate keys periodically.',
+            ]
         elif action == 'decrypt_text':
-            if not str(secret).strip():
+            if not secret.strip():
                 return jsonify({'ok': False, 'message': 'Secret key is required for decryption.'}), 400
-            output = decrypt_text_payload(str(text), str(secret))
+            if len(secret.strip()) < 6:
+                return jsonify({'ok': False, 'message': 'Secret key must be at least 6 characters.'}), 400
+            output = decrypt_text_payload(text, secret)
             score = 18
-            threats = ['Encrypted payload was decrypted using provided secret key.']
+            operation_label = 'Decrypt Text'
+            message = 'Text decrypted successfully.'
+            notes = [
+                'If output is unreadable, verify token format and secret key.',
+                'Treat decrypted sensitive data carefully and avoid logging it.',
+            ]
         else:
             return jsonify({'ok': False, 'message': 'Unsupported action.'}), 400
+    except ValueError as exc:
+        return jsonify({'ok': False, 'message': str(exc) or 'Invalid encryption input.'}), 400
     except Exception:
         return jsonify({'ok': False, 'message': 'Encryption tool operation failed for given input.'}), 400
 
+    status = 'SAFE' if score < 30 else 'WARNING'
+    safe_percent = max(0, min(100, 100 - int(score)))
+
     save_scan_report(
         int(g.user['id']),
-        f'{action}: {str(text)[:80]}',
+        f'{operation_label}: {text[:80]}',
         'encryption',
         score,
-        'SAFE' if score < 30 else 'WARNING',
-        threats,
+        status,
+        notes,
     )
 
     return jsonify(
         {
             'ok': True,
-            'status': 'SAFE' if score < 30 else 'WARNING',
+            'status': status,
             'score': score,
+            'safe_percent': safe_percent,
             'output': output,
-            'message': 'Operation complete.',
+            'output_length': len(str(output)),
+            'message': message,
             'action': action,
+            'operation_label': operation_label,
+            'notes': notes,
+            'processed_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
         }
     )
 

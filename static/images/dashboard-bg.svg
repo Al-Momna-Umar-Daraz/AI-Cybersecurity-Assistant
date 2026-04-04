@@ -6,7 +6,7 @@
     </linearGradient>
   </defs>
   <rect width="1600" height="900" fill="url(#bg)"/>
-  <g opacity="0.22" stroke="#f5b301" stroke-width="1">
+  <g opacity="0.22" stroke="#22c55e" stroke-width="1">
     <path d="M0 120 H1600"/>
     <path d="M0 240 H1600"/>
     <path d="M0 360 H1600"/>
@@ -24,8 +24,9 @@
     <path d="M1520 0 V900"/>
   </g>
   <g opacity="0.25">
-    <circle cx="300" cy="180" r="90" fill="#f5b301"/>
-    <circle cx="1320" cy="720" r="120" fill="#f5b301"/>
-    <circle cx="980" cy="220" r="55" fill="#f5b301"/>
+    <circle cx="300" cy="180" r="90" fill="#22c55e"/>
+    <circle cx="1320" cy="720" r="120" fill="#22c55e"/>
+    <circle cx="980" cy="220" r="55" fill="#22c55e"/>
   </g>
 </svg>
+

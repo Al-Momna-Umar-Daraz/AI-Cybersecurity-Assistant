@@ -3,7 +3,7 @@
 {% block content %}
 <div class="simulator-container">
     <h1><i class="fas fa-bug"></i> Attack Simulator (Safe Mode)</h1>
-    <p class="warning">Educational simulation only - no real attacks.</p>
+    <p class="danger attack-danger-note">Coming soon...</p>
 
     <div class="toolbar-row">
         <div class="toolbar-item toolbar-grow">
@@ -13,24 +13,29 @@
     </div>
 
     <div class="attack-types" id="attackTypes">
-        <div class="attack-card" data-name="sql injection database" onclick="simulateAttack('sql')">
+        <div class="attack-card" data-name="sql injection database" data-attack-type="sql">
             <i class="fas fa-database"></i>
             <h3>SQL Injection</h3>
         </div>
-        <div class="attack-card" data-name="xss cross site scripting javascript" onclick="simulateAttack('xss')">
+        <div class="attack-card" data-name="xss cross site scripting javascript" data-attack-type="xss">
             <i class="fas fa-code"></i>
             <h3>XSS Attack</h3>
         </div>
-        <div class="attack-card" data-name="ddos denial of service network" onclick="simulateAttack('ddos')">
+        <div class="attack-card" data-name="ddos denial of service network" data-attack-type="ddos">
             <i class="fas fa-network-wired"></i>
             <h3>DDoS</h3>
         </div>
     </div>
 
-    <div id="simulationResult" class="simulation-result hidden">
+    <div id="simulationResult" class="simulation-result">
         <h3>Simulation Results</h3>
-        <div id="attackDetails"></div>
-        <div id="preventionTips"></div>
+        <div id="attackDetails" class="muted-text">Select an attack card to run safe simulation and view output here.</div>
+        <div id="preventionTips">
+            <h4>Prevention Tips</h4>
+            <ul>
+                <li>Run simulation to load detailed mitigation advice.</li>
+            </ul>
+        </div>
     </div>
 </div>
 {% endblock %}

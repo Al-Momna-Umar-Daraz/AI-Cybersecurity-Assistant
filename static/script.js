@@ -149,7 +149,7 @@
         '/features/breach': ['yourname@gmail.com', 'admin@company.com', 'security@company.com'],
         '/features/port-scan': ['8.8.8.8|21,22,80,443', 'example.com|80,443,8080'],
         '/features/network-scan': ['http://free-gift-login-secure.tk', 'https://secure-login.example'],
-        '/features/encryption': ['sha256:hello world', 'base64_encode:security test', 'base64_decode:U2VjdXJlIHRleHQ='],
+        '/features/encryption': ['encrypt_text:My confidential note', 'sha256:hello world', 'base64_encode:security test', 'base64_decode:U2VjdXJlIHRleHQ='],
         '/features/linux-lab': ['ls -la /var/log', 'chmod 777 /tmp/data', 'sudo rm -rf /'],
         '/features/assistant': ['How do I harden a Linux server?', 'How can I improve password policy?', 'How to reduce phishing risk?'],
         '/features/chatbot': ['password', 'url', 'attack'],
@@ -365,8 +365,9 @@
             const action = parts[0];
             const text = parts.slice(1).join(':');
             const actionNode = byId('encryptionActionInput');
-            if (actionNode && ['sha256', 'base64_encode', 'base64_decode'].indexOf(action) >= 0) {
+            if (actionNode && ['encrypt_text', 'decrypt_text', 'sha256', 'base64_encode', 'base64_decode'].indexOf(action) >= 0) {
                 actionNode.value = action;
+                if (typeof syncEncryptionActionUi === 'function') syncEncryptionActionUi();
             }
             if (nodes[0]) nodes[0].value = text || value;
             return;
@@ -884,14 +885,211 @@
             });
     };
 
-    window.runEncryptionTool = function runEncryptionTool() {
-        const action = (byId('encryptionActionInput') || {}).value || 'sha256';
-        const text = (byId('encryptionTextInput') || {}).value || '';
-        const secret = (byId('encryptionSecretInput') || {}).value || '';
-        if (!text.trim()) return showInvalidInput('Text is empty.');
-        if ((action === 'encrypt_text' || action === 'decrypt_text') && !secret.trim()) {
-            return showInvalidInput('Secret key is required for encrypt/decrypt.');
+    function getEncryptionActionMeta(action) {
+        var key = String(action || '').trim().toLowerCase();
+        if (key === 'encrypt_text') {
+            return {
+                label: 'Encrypt Text',
+                inputLabel: 'Plain Text',
+                placeholder: 'Example: My confidential note',
+                hint: 'Encrypt converts plain text into a protected token using your secret key.',
+                secretRequired: true
+            };
         }
+        if (key === 'decrypt_text') {
+            return {
+                label: 'Decrypt Text',
+                inputLabel: 'Encrypted Token',
+                placeholder: 'Example: v2.ABCD...XYZ',
+                hint: 'Paste encrypted token and use the same secret key to decrypt.',
+                secretRequired: true
+            };
+        }
+        if (key === 'base64_encode') {
+            return {
+                label: 'Base64 Encode',
+                inputLabel: 'Text to Encode',
+                placeholder: 'Example: secure text',
+                hint: 'Base64 is encoding, not encryption. Do not use it as security.',
+                secretRequired: false
+            };
+        }
+        if (key === 'base64_decode') {
+            return {
+                label: 'Base64 Decode',
+                inputLabel: 'Base64 Text',
+                placeholder: 'Example: U2VjdXJlIHRleHQ=',
+                hint: 'Decode Base64 to original text. Validate source before decoding.',
+                secretRequired: false
+            };
+        }
+        return {
+            label: 'SHA-256 Hash',
+            inputLabel: 'Text to Hash',
+            placeholder: 'Example: hello world',
+            hint: 'SHA-256 is one-way hashing. It cannot be reversed.',
+            secretRequired: false
+        };
+    }
+
+    function syncEncryptionActionUi() {
+        var actionNode = byId('encryptionActionInput');
+        if (!actionNode) return;
+        var textNode = byId('encryptionTextInput');
+        var hintNode = byId('encryptionHintText');
+        var secretWrap = byId('encryptionSecretWrap');
+        var secretLabel = byId('encryptionSecretLabel');
+        var textLabel = byId('encryptionTextLabel');
+        var secretNode = byId('encryptionSecretInput');
+        var meta = getEncryptionActionMeta(actionNode.value || 'sha256');
+
+        if (textNode) textNode.placeholder = meta.placeholder;
+        if (hintNode) hintNode.textContent = meta.hint;
+        if (textLabel) textLabel.textContent = meta.inputLabel;
+
+        if (secretWrap) secretWrap.classList.toggle('hidden', !meta.secretRequired);
+        if (secretLabel) secretLabel.classList.toggle('hidden', !meta.secretRequired);
+        if (secretNode) {
+            if (!meta.secretRequired) secretNode.value = '';
+            secretNode.required = !!meta.secretRequired;
+        }
+    }
+
+    function setEncryptionBusy(isBusy) {
+        var runBtn = byId('encryptionRunBtn');
+        if (!runBtn) return;
+        if (isBusy) {
+            if (!runBtn.dataset.originalText) runBtn.dataset.originalText = runBtn.innerHTML;
+            runBtn.disabled = true;
+            runBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        } else {
+            runBtn.disabled = false;
+            runBtn.innerHTML = runBtn.dataset.originalText || '<i class="fas fa-cogs"></i> Run Tool';
+        }
+    }
+
+    function renderEncryptionNotes(notes) {
+        var list = byId('encryptionNotesList');
+        if (!list) return;
+        var items = Array.isArray(notes) ? notes.filter(Boolean) : [];
+        if (!items.length) items = ['Operation completed. Review output carefully before use.'];
+        list.innerHTML = items.slice(0, 6).map(function (item) {
+            return '<li>' + safeText(item) + '</li>';
+        }).join('');
+    }
+
+    window.copyEncryptionOutput = function copyEncryptionOutput() {
+        var outputNode = byId('encryptionOutput');
+        var value = outputNode ? String(outputNode.value || '') : '';
+        if (!value.trim()) return showInvalidInput('No output available to copy.');
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(value).then(function () {
+                alert('Output copied successfully.');
+            }).catch(function () {
+                showInvalidInput('Copy failed. Please copy manually.');
+            });
+            return;
+        }
+
+        if (outputNode) {
+            outputNode.focus();
+            outputNode.select();
+        }
+        try {
+            document.execCommand('copy');
+            alert('Output copied successfully.');
+        } catch (_) {
+            showInvalidInput('Copy failed. Please copy manually.');
+        }
+    };
+
+    window.clearEncryptionForm = function clearEncryptionForm() {
+        var actionNode = byId('encryptionActionInput');
+        var textNode = byId('encryptionTextInput');
+        var secretNode = byId('encryptionSecretInput');
+        var outputNode = byId('encryptionOutput');
+
+        if (actionNode) actionNode.value = 'encrypt_text';
+        if (textNode) textNode.value = '';
+        if (secretNode) secretNode.value = '';
+        if (outputNode) outputNode.value = '';
+
+        setText('encryptionScoreValue', '0');
+        setText('encryptionStatus', 'READY');
+        setText('encryptionMessage', 'Form cleared. Choose an operation and run again.');
+        setText('encryptionOperation', '-');
+        setText('encryptionOutputLength', '0');
+        setText('encryptionSafePercent', '100%');
+        setText('encryptionProcessedAt', '-');
+        var circle = byId('encryptionScoreCircle');
+        if (circle) circle.className = 'score-circle';
+        renderEncryptionNotes(['Run an operation to load security notes.']);
+        syncEncryptionActionUi();
+    };
+
+    function initEncryptionToolUi() {
+        var actionNode = byId('encryptionActionInput');
+        if (!actionNode) return;
+        syncEncryptionActionUi();
+
+        if (!actionNode.dataset.boundEncryptionAction) {
+            actionNode.dataset.boundEncryptionAction = '1';
+            actionNode.addEventListener('change', function () {
+                syncEncryptionActionUi();
+            });
+        }
+
+        var runBtn = byId('encryptionRunBtn');
+        if (runBtn && !runBtn.dataset.boundEncryptionRun) {
+            runBtn.dataset.boundEncryptionRun = '1';
+            runBtn.addEventListener('click', function () {
+                window.runEncryptionTool();
+            });
+        }
+
+        var copyBtn = byId('encryptionCopyBtn');
+        if (copyBtn && !copyBtn.dataset.boundEncryptionCopy) {
+            copyBtn.dataset.boundEncryptionCopy = '1';
+            copyBtn.addEventListener('click', function () {
+                window.copyEncryptionOutput();
+            });
+        }
+
+        var clearBtn = byId('encryptionClearBtn');
+        if (clearBtn && !clearBtn.dataset.boundEncryptionClear) {
+            clearBtn.dataset.boundEncryptionClear = '1';
+            clearBtn.addEventListener('click', function () {
+                window.clearEncryptionForm();
+            });
+        }
+
+        var secretToggle = byId('encryptionSecretToggle');
+        var secretInput = byId('encryptionSecretInput');
+        if (secretToggle && secretInput && !secretToggle.dataset.boundEncryptionSecretToggle) {
+            secretToggle.dataset.boundEncryptionSecretToggle = '1';
+            secretToggle.addEventListener('click', function () {
+                var visible = secretInput.type === 'text';
+                secretInput.type = visible ? 'password' : 'text';
+                secretToggle.innerHTML = visible ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+            });
+        }
+    }
+
+    window.runEncryptionTool = function runEncryptionTool() {
+        var action = (byId('encryptionActionInput') || {}).value || 'sha256';
+        var text = (byId('encryptionTextInput') || {}).value || '';
+        var secret = (byId('encryptionSecretInput') || {}).value || '';
+        var meta = getEncryptionActionMeta(action);
+
+        if (!String(text).trim()) return showInvalidInput('Input text is empty.');
+        if (String(text).length > 20000) return showInvalidInput('Input is too long. Maximum allowed is 20,000 characters.');
+        if (meta.secretRequired && !String(secret).trim()) return showInvalidInput('Secret key is required for this operation.');
+        if (meta.secretRequired && String(secret).trim().length < 6) return showInvalidInput('Secret key must be at least 6 characters.');
+
+        setEncryptionBusy(true);
+        setText('encryptionStatus', 'PROCESSING');
+        setText('encryptionMessage', 'Running ' + meta.label + '...');
 
         apiFetchJson('/api/encryption-tool', {
             method: 'POST',
@@ -899,25 +1097,57 @@
             body: JSON.stringify({ action: action, text: text, secret: secret })
         })
             .then(function (data) {
-                const score = Number(data.score || 0);
-                byId('encryptionScoreValue').textContent = String(score);
-                byId('encryptionStatus').textContent = data.status || 'SAFE';
-                byId('encryptionMessage').textContent = data.message || '';
-                byId('encryptionOutput').value = data.output || '';
-                byId('encryptionScoreCircle').className = 'score-circle ' + getRiskClass(score);
+                var score = Number(data.score || 0);
+                var status = data.status || inferStatus(score);
+                var output = String(data.output || '');
+                var safePercent = Number(data.safe_percent);
+                if (!Number.isFinite(safePercent)) safePercent = Math.max(0, 100 - score);
+
+                setText('encryptionScoreValue', String(score));
+                setText('encryptionStatus', status);
+                setText('encryptionMessage', data.message || 'Operation complete.');
+                setText('encryptionOperation', data.operation_label || meta.label);
+                setText('encryptionOutputLength', String(output.length));
+                setText('encryptionSafePercent', String(safePercent) + '%');
+                setText('encryptionProcessedAt', data.processed_at || (new Date()).toLocaleTimeString());
+
+                var outputNode = byId('encryptionOutput');
+                if (outputNode) outputNode.value = output;
+
+                var circle = byId('encryptionScoreCircle');
+                if (circle) circle.className = 'score-circle ' + getRiskClass(score);
+
+                renderEncryptionNotes(data.notes || []);
+
                 updateModuleInsight({
                     score: score,
-                    status: data.status || inferStatus(score),
+                    status: status,
                     message: data.message || 'Encryption tool operation completed.',
-                    suggestions: action === 'encrypt_text'
-                        ? ['Store secret keys securely and never expose them in frontend logs.', 'Use unique keys for sensitive datasets.']
-                        : ['Do not treat Base64 as encryption.', 'Store sensitive hashes with salt in backend.']
+                    output_lines: [
+                        'Operation: ' + (data.operation_label || meta.label),
+                        'Status: ' + status,
+                        'Risk Score: ' + score + '%',
+                        'Safe Percentage: ' + safePercent + '%',
+                        'Output Length: ' + output.length
+                    ],
+                    suggestions: data.notes || []
                 });
-                byId('encryptionResultSection').classList.remove('hidden');
+
+                var resultSection = byId('encryptionResultSection');
+                if (resultSection) resultSection.classList.remove('hidden');
             })
             .catch(function (err) {
-                updateModuleInsight({ score: 45, status: 'WARNING', message: (err && err.message) ? err.message : 'Encryption tool failed.' });
-                alert((err && err.message) ? err.message : 'Encryption tool failed. Please retype and try again.');
+                var message = (err && err.message) ? err.message : 'Encryption tool failed.';
+                setText('encryptionStatus', 'WARNING');
+                setText('encryptionMessage', message);
+                setText('encryptionOperation', meta.label);
+                setText('encryptionProcessedAt', (new Date()).toLocaleTimeString());
+                renderEncryptionNotes([message, 'Retype input and try again with valid format.']);
+                updateModuleInsight({ score: 45, status: 'WARNING', message: message });
+                alert(message + ' Please retype and try again.');
+            })
+            .finally(function () {
+                setEncryptionBusy(false);
             });
     };
 
@@ -1090,7 +1320,10 @@
         const simulationResult = byId('simulationResult');
         const attackDetails = byId('attackDetails');
         const preventionTips = byId('preventionTips');
-        if (!simulationResult || !attackDetails || !preventionTips) return;
+        if (!simulationResult || !attackDetails || !preventionTips) {
+            alert('Result panel not found on page. Please refresh and retry.');
+            return;
+        }
 
         const scenarios = {
             sql: {
@@ -1120,13 +1353,19 @@
         };
 
         const selected = scenarios[type];
-        if (!selected) return;
+        if (!selected) {
+            attackDetails.textContent = 'Invalid attack type selected.';
+            preventionTips.innerHTML = '<h4>Prevention Tips</h4><ul><li>Choose SQL, XSS, or DDoS card.</li></ul>';
+            simulationResult.classList.remove('hidden');
+            return;
+        }
 
         attackDetails.textContent = selected.detail;
         preventionTips.innerHTML = '<h4>Prevention Tips</h4><ul>' +
             selected.tips.map(function (tip) { return '<li>' + safeText(tip) + '</li>'; }).join('') +
             '</ul>';
         simulationResult.classList.remove('hidden');
+        simulationResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
         const attackScore = type === 'sql' ? 86 : type === 'xss' ? 78 : 82;
         updateModuleInsight({
             score: attackScore,
@@ -1135,6 +1374,19 @@
             suggestions: selected.tips
         });
     };
+
+    function bindAttackCards() {
+        var wrap = byId('attackTypes');
+        if (!wrap || wrap.dataset.boundAttackCards) return;
+        wrap.dataset.boundAttackCards = '1';
+        var cards = wrap.querySelectorAll('.attack-card');
+        cards.forEach(function (card) {
+            card.addEventListener('click', function () {
+                var type = String(card.getAttribute('data-attack-type') || '').trim().toLowerCase();
+                window.simulateAttack(type);
+            });
+        });
+    }
 
     window.filterAttackCards = function filterAttackCards() {
         const input = byId('attackSearch');
@@ -1150,16 +1402,109 @@
         const openBtn = byId('menuToggle');
         const closeBtn = byId('sidebarClose');
         const body = document.body;
+        
+        function isMobile() {
+            return window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+        }
+
+        function syncMenuState() {
+            var expanded = isMobile() ? body.classList.contains('sidebar-open') : !body.classList.contains('sidebar-hidden');
+            if (openBtn) {
+                openBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            }
+        }
 
         if (openBtn) {
             openBtn.addEventListener('click', function () {
-                body.classList.toggle('sidebar-open');
+                if (isMobile()) {
+                    body.classList.remove('sidebar-hidden');
+                    body.classList.toggle('sidebar-open');
+                } else {
+                    body.classList.remove('sidebar-open');
+                    body.classList.toggle('sidebar-hidden');
+                }
+                syncMenuState();
             });
         }
 
         if (closeBtn) {
             closeBtn.addEventListener('click', function () {
-                body.classList.remove('sidebar-open');
+                if (isMobile()) {
+                    body.classList.remove('sidebar-open');
+                } else {
+                    body.classList.add('sidebar-hidden');
+                }
+                syncMenuState();
+            });
+        }
+
+        if (!window.__boundSidebarToggleResize) {
+            window.__boundSidebarToggleResize = true;
+            window.addEventListener('resize', function () {
+                if (!isMobile()) {
+                    body.classList.remove('sidebar-open');
+                }
+                syncMenuState();
+            });
+        }
+
+        syncMenuState();
+    }
+
+    function setupHistoryNav() {
+        var backBtn = byId('historyBackBtn');
+        var forwardBtn = byId('historyForwardBtn');
+        if (!backBtn && !forwardBtn) return;
+
+        if (backBtn && !backBtn.dataset.boundHistory) {
+            backBtn.dataset.boundHistory = '1';
+            backBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (window.history.length > 1) {
+                    window.history.back();
+                } else {
+                    window.location.href = '/';
+                }
+            });
+        }
+
+        if (forwardBtn && !forwardBtn.dataset.boundHistory) {
+            forwardBtn.dataset.boundHistory = '1';
+            forwardBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.history.forward();
+            });
+        }
+    }
+
+    function setupQuickToolsListToggle() {
+        var sidebar = byId('sidebar');
+        var list = byId('quickToolsList');
+        var btn = byId('quickToolsToggle');
+        if (!sidebar || !list || !btn) return;
+
+        function applyState(collapsed) {
+            sidebar.classList.toggle('list-collapsed', !!collapsed);
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            var icon = btn.querySelector('i');
+            if (icon) {
+                icon.className = collapsed ? 'fas fa-chevron-down' : 'fas fa-chevron-up';
+            }
+            try {
+                sessionStorage.setItem('quickToolsCollapsed', collapsed ? '1' : '0');
+            } catch (_) { }
+        }
+
+        var saved = '0';
+        try { saved = sessionStorage.getItem('quickToolsCollapsed') || '0'; } catch (_) { }
+        applyState(saved === '1');
+
+        if (!btn.dataset.boundQuickToolsToggle) {
+            btn.dataset.boundQuickToolsToggle = '1';
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                var collapsed = !sidebar.classList.contains('list-collapsed');
+                applyState(collapsed);
             });
         }
     }
@@ -1208,7 +1553,7 @@
                         data.type_risk.linux || 0,
                         data.type_risk.facecheck || 0
                     ],
-                    backgroundColor: ['#5bc0eb','#f0b429','#9bc53d','#ff6f59','#f25f5c','#f7b801','#84dcc6','#c77dff','#4f46e5']
+                    backgroundColor: ['#5bc0eb','#22c55e','#9bc53d','#ff6f59','#f25f5c','#16a34a','#84dcc6','#c77dff','#4f46e5']
                 }]
             },
             options: { scales: { y: { beginAtZero: true, max: 100 } } }
@@ -1295,8 +1640,7 @@
         })
             .then(function (data) {
                 if (data.success) {
-                    document.body.classList.toggle('dark-mode', payload.dark_mode);
-                    localStorage.setItem('darkMode', payload.dark_mode ? '1' : '0');
+                    applyThemeState(payload.dark_mode, true);
                     alert('Settings saved successfully.');
                 } else {
                     alert('Could not save settings.');
@@ -1474,19 +1818,107 @@
         }
     }
 
+    function applyThemeState(useDark, persistLocal) {
+        var enabled = !!useDark;
+        document.body.classList.toggle('dark-mode', enabled);
+        document.body.setAttribute('data-dark-mode', enabled ? '1' : '0');
+        if (persistLocal !== false) {
+            try { localStorage.setItem('darkMode', enabled ? '1' : '0'); } catch (_) { }
+        }
+        var darkModeCheckbox = byId('darkMode');
+        var quickDarkToggle = byId('quickDarkToggle');
+        if (darkModeCheckbox) darkModeCheckbox.checked = enabled;
+        if (quickDarkToggle) quickDarkToggle.checked = enabled;
+    }
+
+    function persistThemePreference(useDark) {
+        return apiFetchJson('/api/theme', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ dark_mode: !!useDark })
+        }).catch(function () { });
+    }
+
     function initDarkMode() {
-        const darkModeCheckbox = byId('darkMode');
         const bodyDefaultDark = document.body.classList.contains('dark-mode') || String(document.body.getAttribute('data-dark-mode') || '') === '1';
         const stored = localStorage.getItem('darkMode');
-        let useDark = bodyDefaultDark;
+        let useDark = true;
         if (stored === '1' || stored === '0') {
             useDark = stored === '1';
+        } else {
+            useDark = bodyDefaultDark || true;
         }
-        document.body.classList.toggle('dark-mode', useDark);
-        if (darkModeCheckbox) {
-            darkModeCheckbox.checked = useDark;
+        applyThemeState(useDark, true);
+
+        var darkModeCheckbox = byId('darkMode');
+        if (darkModeCheckbox && !darkModeCheckbox.dataset.boundTheme) {
+            darkModeCheckbox.dataset.boundTheme = '1';
             darkModeCheckbox.addEventListener('change', function () {
-                document.body.classList.toggle('dark-mode', !!darkModeCheckbox.checked);
+                applyThemeState(!!darkModeCheckbox.checked, true);
+            });
+        }
+        var quickDarkToggle = byId('quickDarkToggle');
+        if (quickDarkToggle && !quickDarkToggle.dataset.boundTheme) {
+            quickDarkToggle.dataset.boundTheme = '1';
+            quickDarkToggle.addEventListener('change', function () {
+                applyThemeState(!!quickDarkToggle.checked, true);
+                persistThemePreference(!!quickDarkToggle.checked);
+            });
+        }
+    }
+
+    function setupTopMoreMenu() {
+        var btn = byId('topMoreBtn');
+        var panel = byId('topMorePanel');
+        var closeBtn = byId('topMoreClose');
+        if (!btn || !panel) return;
+
+        function openPanel() {
+            panel.classList.remove('hidden');
+            window.requestAnimationFrame(function () {
+                panel.classList.add('open');
+            });
+            btn.setAttribute('aria-expanded', 'true');
+            panel.setAttribute('aria-hidden', 'false');
+        }
+
+        function closePanel() {
+            panel.classList.remove('open');
+            btn.setAttribute('aria-expanded', 'false');
+            panel.setAttribute('aria-hidden', 'true');
+            window.setTimeout(function () {
+                if (!panel.classList.contains('open')) panel.classList.add('hidden');
+            }, 220);
+        }
+
+        if (!btn.dataset.boundMoreMenu) {
+            btn.dataset.boundMoreMenu = '1';
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (panel.classList.contains('hidden') || !panel.classList.contains('open')) {
+                    openPanel();
+                } else {
+                    closePanel();
+                }
+            });
+        }
+        if (closeBtn && !closeBtn.dataset.boundMoreMenu) {
+            closeBtn.dataset.boundMoreMenu = '1';
+            closeBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                closePanel();
+            });
+        }
+        if (!document.body.dataset.boundMoreMenuClose) {
+            document.body.dataset.boundMoreMenuClose = '1';
+            document.addEventListener('click', function (e) {
+                if (panel.classList.contains('hidden')) return;
+                var target = e.target;
+                if (panel.contains(target) || btn.contains(target)) return;
+                closePanel();
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !panel.classList.contains('hidden')) closePanel();
             });
         }
     }
@@ -1538,8 +1970,13 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        setupHistoryNav();
         setupSidebarToggle();
+        setupQuickToolsListToggle();
+        setupTopMoreMenu();
         initDarkMode();
+        bindAttackCards();
+        initEncryptionToolUi();
         initAnalysisPage();
         initMonetizationPage();
         initPwaInstall();
@@ -1610,3 +2047,4 @@
         }
     });
 })();
+
