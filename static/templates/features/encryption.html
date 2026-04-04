@@ -1,0 +1,32 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="analyzer-container">
+    <h1><i class="fas fa-key"></i> Encryption Tools</h1>
+    <p class="muted-text">Convert and protect text with common cryptographic utility actions.</p>
+
+    <div class="input-section">
+        <select id="encryptionActionInput">
+            <option value="sha256">SHA-256 Hash</option>
+            <option value="base64_encode">Base64 Encode</option>
+            <option value="base64_decode">Base64 Decode</option>
+        </select>
+        <textarea id="encryptionTextInput" placeholder="Enter text here..."></textarea>
+        <button onclick="runEncryptionTool()" class="btn-analyze"><i class="fas fa-cogs"></i> Run Tool</button>
+    </div>
+
+    <div id="encryptionResultSection" class="result-section hidden">
+        <div class="threat-score">
+            <div class="score-circle" id="encryptionScoreCircle"><span id="encryptionScoreValue">0</span>%</div>
+            <div>
+                <div id="encryptionStatus">SAFE</div>
+                <small id="encryptionMessage" class="muted-text"></small>
+            </div>
+        </div>
+        <div class="threat-details">
+            <h3>Output</h3>
+            <textarea id="encryptionOutput" readonly></textarea>
+        </div>
+    </div>
+</div>
+{% endblock %}

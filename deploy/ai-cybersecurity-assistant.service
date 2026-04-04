@@ -1,0 +1,15 @@
+﻿[Unit]
+Description=AI Cybersecurity Assistant (Gunicorn)
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/ai-cybersecurity-assistant
+EnvironmentFile=/opt/ai-cybersecurity-assistant/.env
+ExecStart=/opt/ai-cybersecurity-assistant/.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

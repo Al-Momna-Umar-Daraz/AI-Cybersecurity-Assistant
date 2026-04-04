@@ -1,0 +1,148 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <meta name="theme-color" content="#f5b301">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <title>{% block title %}{{ app_brand_name }}{% endblock %}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=static_version) }}">
+    {% if ads_enabled %}
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client }}" crossorigin="anonymous"></script>
+    {% endif %}
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="logo">
+                <i class="fas fa-shield-alt"></i>
+                <span>{{ app_brand_name }}</span>
+            </div>
+        </div>
+
+        <nav class="header-nav">
+            <a href="/" class="nav-link"><i class="fas fa-home"></i> Home</a>
+            {% if logged_in %}
+            <a href="/features/command" class="nav-link"><i class="fas fa-terminal"></i> Command</a>
+            <a href="/features/password" class="nav-link"><i class="fas fa-lock"></i> Password</a>
+            <a href="/features/url" class="nav-link"><i class="fas fa-globe"></i> URL</a>
+            <a href="/features/breach" class="nav-link"><i class="fas fa-user-shield"></i> Breach</a>
+            <a href="/features/port-scan" class="nav-link"><i class="fas fa-network-wired"></i> Ports</a>
+            <a href="/features/network-scan" class="nav-link"><i class="fas fa-sitemap"></i> Network</a>
+            <a href="/features/encryption" class="nav-link"><i class="fas fa-key"></i> Encrypt</a>
+            <a href="/features/linux-lab" class="nav-link"><i class="fas fa-terminal"></i> Linux Lab</a>
+            <a href="/features/face-intel" class="nav-link"><i class="fas fa-camera"></i> Face Intel</a>
+            <a href="/features/assistant" class="nav-link"><i class="fas fa-robot"></i> AI Assistant</a>
+            <a href="/analysis" class="nav-link"><i class="fas fa-chart-bar"></i> Analysis</a>
+            <a href="/reports" class="nav-link"><i class="fas fa-file-alt"></i> Reports</a>
+            <a href="/monetization" class="nav-link"><i class="fas fa-coins"></i> Monetize</a>
+            <a href="/settings" class="nav-link"><i class="fas fa-cog"></i> Settings</a>
+            <a href="/profile" class="nav-link nav-user">
+                {% if current_user_avatar %}
+                <img src="{{ current_user_avatar }}" alt="Profile" class="avatar-sm">
+                {% else %}
+                <i class="fas fa-user"></i>
+                {% endif %}
+                {{ current_user_name }}
+            </a>
+            <button id="installAppBtn" class="nav-link install-btn hidden" type="button"><i class="fas fa-download"></i> Install App</button>
+            <a href="/logout" class="nav-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
+            {% else %}
+            <a href="/login" class="nav-link"><i class="fas fa-sign-in-alt"></i> Login</a>
+            <a href="/register" class="nav-link"><i class="fas fa-user-plus"></i> Register</a>
+            {% endif %}
+        </nav>
+    </header>
+
+    <div class="main-container">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-top">
+                <h3><i class="fas fa-tools"></i> Quick Tools</h3>
+                <button class="sidebar-close" id="sidebarClose" type="button" aria-label="Close sidebar">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            {% if logged_in %}
+            <a href="/features/command" class="sidebar-link"><i class="fas fa-terminal"></i> Command Analyzer</a>
+            <a href="/features/password" class="sidebar-link"><i class="fas fa-lock"></i> Password Checker</a>
+            <a href="/features/url" class="sidebar-link"><i class="fas fa-globe"></i> URL Scanner</a>
+            <a href="/features/breach" class="sidebar-link"><i class="fas fa-user-shield"></i> Email Breach Checker</a>
+            <a href="/features/port-scan" class="sidebar-link"><i class="fas fa-network-wired"></i> Port Scanner</a>
+            <a href="/features/network-scan" class="sidebar-link"><i class="fas fa-sitemap"></i> Network AI Scan</a>
+            <a href="/features/encryption" class="sidebar-link"><i class="fas fa-key"></i> Encryption Tools</a>
+            <a href="/features/linux-lab" class="sidebar-link"><i class="fas fa-terminal"></i> Linux Command Lab</a>
+            <a href="/features/face-intel" class="sidebar-link"><i class="fas fa-camera"></i> Face Recognition Intel</a>
+            <a href="/features/assistant" class="sidebar-link"><i class="fas fa-robot"></i> AI Assistant</a>
+            <a href="/features/chatbot" class="sidebar-link"><i class="fas fa-comments"></i> Chatbot</a>
+            <a href="/features/attack" class="sidebar-link"><i class="fas fa-bug"></i> Attack Simulator</a>
+
+            <hr>
+
+            <a href="/analysis" class="sidebar-link"><i class="fas fa-chart-pie"></i> Analysis</a>
+            <a href="/reports" class="sidebar-link"><i class="fas fa-file-export"></i> Reports</a>
+            <a href="/monetization" class="sidebar-link"><i class="fas fa-coins"></i> Monetization</a>
+            <a href="/settings" class="sidebar-link"><i class="fas fa-sliders-h"></i> Settings</a>
+            <a href="/profile" class="sidebar-link"><i class="fas fa-id-card"></i> My Profile</a>
+            {% else %}
+            <a href="/login" class="sidebar-link"><i class="fas fa-sign-in-alt"></i> Login</a>
+            <a href="/register" class="sidebar-link"><i class="fas fa-user-plus"></i> Create Account</a>
+            {% endif %}
+        </aside>
+
+        <main class="content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                <div class="flash-stack">
+                    {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <footer class="footer">
+        {% if ads_enabled %}
+        <div class="ad-slot">
+            <ins class="adsbygoogle"
+                style="display:block"
+                data-ad-client="{{ adsense_client }}"
+                data-ad-slot="1234567890"
+                data-ad-format="auto"
+                data-full-width-responsive="true"></ins>
+        </div>
+        {% endif %}
+        <div class="footer-links">
+            <a href="/">Home</a>
+            {% if logged_in %}
+            <a href="/features/command">Features</a>
+            <a href="/analysis">Dashboard</a>
+            <a href="/reports">Reports</a>
+            <a href="/monetization">Monetize</a>
+            <a href="/settings">Settings</a>
+            {% else %}
+            <a href="/login">Login</a>
+            <a href="/register">Register</a>
+            {% endif %}
+        </div>
+        <p>&copy; {{ current_year }} {{ app_brand_name }}. Developed by {{ author_name }}.</p>
+    </footer>
+
+    <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='script.js', v=static_version) }}"></script>
+    {% if ads_enabled %}
+    <script nonce="{{ csp_nonce }}">
+        (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
+    {% endif %}
+    {% block scripts %}{% endblock %}
+</body>
+</html>

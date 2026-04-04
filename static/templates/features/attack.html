@@ -1,0 +1,36 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="simulator-container">
+    <h1><i class="fas fa-bug"></i> Attack Simulator (Safe Mode)</h1>
+    <p class="warning">Educational simulation only - no real attacks.</p>
+
+    <div class="toolbar-row">
+        <div class="toolbar-item toolbar-grow">
+            <label for="attackSearch">Search Attack Type</label>
+            <input id="attackSearch" type="text" placeholder="Example: sql, xss, ddos" oninput="filterAttackCards()">
+        </div>
+    </div>
+
+    <div class="attack-types" id="attackTypes">
+        <div class="attack-card" data-name="sql injection database" onclick="simulateAttack('sql')">
+            <i class="fas fa-database"></i>
+            <h3>SQL Injection</h3>
+        </div>
+        <div class="attack-card" data-name="xss cross site scripting javascript" onclick="simulateAttack('xss')">
+            <i class="fas fa-code"></i>
+            <h3>XSS Attack</h3>
+        </div>
+        <div class="attack-card" data-name="ddos denial of service network" onclick="simulateAttack('ddos')">
+            <i class="fas fa-network-wired"></i>
+            <h3>DDoS</h3>
+        </div>
+    </div>
+
+    <div id="simulationResult" class="simulation-result hidden">
+        <h3>Simulation Results</h3>
+        <div id="attackDetails"></div>
+        <div id="preventionTips"></div>
+    </div>
+</div>
+{% endblock %}

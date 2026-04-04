@@ -1,0 +1,23 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <i class="fas fa-robot"></i>
+        <h1>CyberShield AI Assistant</h1>
+    </div>
+
+    <div id="assistantMessages" class="chat-messages">
+        <div class="message bot">
+            <div class="message-content">
+                Hello! I am your AI assistant. Ask me anything about cybersecurity best practices, incident response, or secure configuration.
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-input">
+        <input type="text" id="assistantInput" placeholder="Ask your cybersecurity question...">
+        <button type="button" onclick="sendAssistantMessage()"><i class="fas fa-paper-plane"></i></button>
+    </div>
+</div>
+{% endblock %}

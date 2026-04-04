@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Runtime / database
+*.db
+*.db-journal
+instance/
+logs/
+*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build/cache
+dist/
+build/
+*.tmp
+_tmp_*.js
+repo-data/
+
+# User-generated uploads
+static/uploads/*
+!static/uploads/.gitkeep

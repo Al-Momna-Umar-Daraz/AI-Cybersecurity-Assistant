@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="analyzer-container">
+    <h1><i class="fas fa-globe"></i> URL Scanner</h1>
+    <p class="muted-text">Scan a URL for phishing indicators and known breach-domain presence.</p>
+
+    <div class="settings-section mt-1">
+        <h3><i class="fas fa-info-circle"></i> How To Use</h3>
+        <ul class="report-threats">
+            <li>Paste a full URL or domain.</li>
+            <li>Click <strong>Scan URL</strong>.</li>
+            <li>Review risk %, safe %, breach count, and findings.</li>
+        </ul>
+    </div>
+
+    <div class="input-section mt-1">
+        <label for="urlInput"><strong>URL Input</strong></label>
+        <input type="text" id="urlInput" placeholder="Example: www.google.com or https://openai.com">
+        <button id="urlScanBtn" type="button" class="btn-analyze">
+            <i class="fas fa-search"></i> Scan URL
+        </button>
+    </div>
+
+    <div id="urlResultSection" class="result-section hidden">
+        <div class="threat-score">
+            <div class="score-circle" id="urlScoreCircle">
+                <span id="urlScoreValue">0</span>%
+            </div>
+            <div>
+                <div id="urlStatus">UNKNOWN</div>
+                <small id="urlMessage" class="muted-text">-</small>
+                <br>
+                <small id="urlModeBadge" class="muted-text">Mode: -</small>
+            </div>
+        </div>
+
+        <div class="url-result-grid mt-1">
+            <div class="stat-box">
+                <h2 id="urlSafePercent">0%</h2>
+                <p>Safe Percentage</p>
+            </div>
+            <div class="stat-box">
+                <h2 id="urlBreachCount">N/A</h2>
+                <p>Known Breach Records</p>
+            </div>
+            <div class="stat-box">
+                <h2 id="urlDomainLabel">-</h2>
+                <p>Domain</p>
+            </div>
+        </div>
+
+        <div class="threat-details mt-1">
+            <h3>Detailed Findings</h3>
+            <ul id="urlThreatList"></ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+    function byId(id) { return document.getElementById(id); }
+    let activeController = null;
+    let activeTimer = null;
+    function safeText(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    function getRiskClass(score) {
+        if (score < 30) return 'safe';
+        if (score < 70) return 'warning';
+        return 'danger';
+    }
+    function csrfToken() {
+        const node = document.querySelector('meta[name="csrf-token"]');
+        return node ? (node.getAttribute('content') || '') : '';
+    }
+    function setBusy(isBusy) {
+        const btn = byId('urlScanBtn');
+        if (!btn) return;
+        btn.disabled = !!isBusy;
+        if (isBusy) {
+            btn.dataset.originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+        } else if (btn.dataset.originalText) {
+            btn.innerHTML = btn.dataset.originalText;
+        }
+    }
+
+    function extractDomain(raw) {
+        const value = String(raw || '').trim();
+        if (!value) return '-';
+        try {
+            const urlValue = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value) ? value : ('https://' + value);
+            const u = new URL(urlValue);
+            return u.hostname || '-';
+        } catch (_) {
+            return value.replace(/^https?:\/\//i, '').split('/')[0] || '-';
+        }
+    }
+
+    function showMessage(msg, score, status, inputValue) {
+        const s = Number(score || 0);
+        const safePercent = Math.max(0, 100 - s);
+        const domain = extractDomain(inputValue);
+        byId('urlScoreValue').textContent = String(s);
+        byId('urlStatus').textContent = String(status || 'UNKNOWN');
+        byId('urlMessage').textContent = String(msg || 'Unable to process URL right now.');
+        byId('urlModeBadge').textContent = 'Mode: Local Validation';
+        byId('urlScoreCircle').className = 'score-circle ' + getRiskClass(s);
+        byId('urlSafePercent').textContent = String(safePercent) + '%';
+        byId('urlBreachCount').textContent = 'N/A';
+        byId('urlDomainLabel').textContent = domain;
+        byId('urlThreatList').innerHTML = '<li>' + safeText(msg || 'Please retry URL scan.') + '</li>';
+        byId('urlResultSection').classList.remove('hidden');
+    }
+
+    function renderResult(data, inputValue, modeLabel) {
+        const score = Number(data.score || 0);
+        const status = data.status || 'UNKNOWN';
+        const threats = Array.isArray(data.threats) ? data.threats : [];
+        const safePercent = (typeof data.safe_percent === 'number') ? data.safe_percent : Math.max(0, 100 - score);
+        const breachCount = (typeof data.breach_count === 'number') ? data.breach_count : 0;
+        const domain = data.domain || extractDomain(data.url || inputValue);
+        const modeText = String(modeLabel || 'Live Scan');
+
+        byId('urlScoreValue').textContent = String(score);
+        byId('urlStatus').textContent = status;
+        byId('urlMessage').textContent = data.breach_message || data.message || 'URL scan completed.';
+        byId('urlModeBadge').textContent = 'Mode: ' + modeText;
+        byId('urlScoreCircle').className = 'score-circle ' + getRiskClass(score);
+        byId('urlSafePercent').textContent = String(safePercent) + '%';
+        byId('urlBreachCount').textContent = String(breachCount);
+        byId('urlDomainLabel').textContent = String(domain || '-');
+        byId('urlThreatList').innerHTML = threats.length
+            ? threats.map(function (t) { return '<li>' + safeText(t) + '</li>'; }).join('')
+            : '<li>No major threat indicators detected.</li>';
+        byId('urlResultSection').classList.remove('hidden');
+
+        if (typeof window.updateModuleInsight === 'function') {
+            window.updateModuleInsight({
+                score: score,
+                status: status,
+                message: data.breach_message || data.message || 'URL scan completed.',
+                suggestions: threats.slice(0, 4)
+            });
+        }
+    }
+
+    function buildLocalFallback(inputValue, reason) {
+        const raw = String(inputValue || '').trim();
+        const domain = extractDomain(raw);
+        const normalized = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : ('https://' + raw);
+        const lower = normalized.toLowerCase();
+        const findings = [];
+        let score = 0;
+
+        if (lower.indexOf('http://') === 0) {
+            score += 20;
+            findings.push('URL is not using HTTPS.');
+        }
+        if ((domain.match(/-/g) || []).length >= 3) {
+            score += 12;
+            findings.push('Domain contains multiple hyphens (possible phishing style).');
+        }
+        if (domain.indexOf('xn--') >= 0) {
+            score += 20;
+            findings.push('Punycode domain detected (possible homograph risk).');
+        }
+
+        const suspiciousTokens = ['free-gift', 'verify-account', 'login-secure', 'bank-update', 'bit.ly', 'tinyurl', '.tk', '.ru', '.xyz', '@'];
+        suspiciousTokens.forEach(function (token) {
+            if (lower.indexOf(token) >= 0) {
+                score += 10;
+                findings.push('Suspicious indicator found: ' + token);
+            }
+        });
+
+        score = Math.max(0, Math.min(100, score));
+        const status = score < 30 ? 'SAFE' : (score < 70 ? 'WARNING' : 'DANGEROUS');
+        return {
+            score: score,
+            status: status,
+            safe_percent: Math.max(0, 100 - score),
+            breach_count: 0,
+            domain: domain,
+            breach_message: 'Live breach check unavailable in fallback mode.',
+            message: reason || 'Live URL scan unavailable. Local heuristic result shown.',
+            threats: findings.length ? findings : ['No major local threat indicators detected.']
+        };
+    }
+
+    function scanURL() {
+        const field = byId('urlInput');
+        const value = field ? field.value.trim() : '';
+        if (!value) {
+            showMessage('Please enter a URL and try again.', 0, 'UNKNOWN', value);
+            return;
+        }
+
+        if (activeController) {
+            try { activeController.abort(); } catch (_) {}
+            activeController = null;
+        }
+        if (activeTimer) {
+            clearTimeout(activeTimer);
+            activeTimer = null;
+        }
+
+        activeController = new AbortController();
+        activeTimer = setTimeout(function () {
+            if (activeController) {
+                try { activeController.abort(); } catch (_) {}
+            }
+        }, 12000);
+        setBusy(true);
+
+        fetch('/api/url-scan', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            signal: activeController.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken()
+            },
+            body: JSON.stringify({ url: value })
+        }).then(function (res) {
+            return res.text().then(function (text) {
+                let data = null;
+                try {
+                    data = text ? JSON.parse(text) : {};
+                } catch (_) {
+                    data = null;
+                }
+                if (!res.ok) {
+                    const msg = (data && (data.error || data.message))
+                        ? (data.error || data.message)
+                        : 'URL scan failed. Please refresh and try again.';
+                    throw new Error(msg);
+                }
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Server returned invalid response. Please refresh and retry.');
+                }
+                return data;
+            });
+        }).then(function (data) {
+            renderResult(data, value, 'Live Scan');
+        }).catch(function (err) {
+            const msg = (err && err.name === 'AbortError')
+                ? 'Request timeout. Please retry.'
+                : ((err && err.message) ? err.message : 'URL scan failed. Please retry.');
+            const fallback = buildLocalFallback(value, msg);
+            renderResult(fallback, value, 'Fallback Scan');
+            if (typeof window.updateModuleInsight === 'function') {
+                window.updateModuleInsight({
+                    score: Number(fallback.score || 45),
+                    status: fallback.status || 'WARNING',
+                    message: msg
+                });
+            }
+        }).finally(function () {
+            if (activeTimer) {
+                clearTimeout(activeTimer);
+                activeTimer = null;
+            }
+            activeController = null;
+            setBusy(false);
+        });
+    }
+
+    window.scanURL = scanURL;
+
+    function bind() {
+        const btn = byId('urlScanBtn');
+        const input = byId('urlInput');
+        if (btn && !btn.dataset.urlBound) {
+            btn.dataset.urlBound = '1';
+            btn.addEventListener('click', function () { scanURL(); });
+        }
+        if (input && !input.dataset.urlBound) {
+            input.dataset.urlBound = '1';
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    scanURL();
+                }
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+})();
+</script>
+{% endblock %}

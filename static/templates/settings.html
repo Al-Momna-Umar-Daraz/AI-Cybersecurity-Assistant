@@ -1,0 +1,55 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-container">
+    <h1><i class="fas fa-cog"></i> Settings</h1>
+
+    <div class="toolbar-row">
+        <div class="toolbar-item toolbar-grow">
+            <label for="settingsSearch">Search Settings</label>
+            <input id="settingsSearch" type="text" placeholder="Example: dark mode, notifications, auto refresh" oninput="filterSettings()">
+        </div>
+    </div>
+
+    <div class="settings-section setting-item" data-name="appearance dark mode">
+        <h3>Appearance</h3>
+        <label class="toggle">
+            <span>Dark Mode</span>
+            <input type="checkbox" id="darkMode" {% if settings_data.dark_mode %}checked{% endif %}>
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="settings-section setting-item" data-name="notifications threat alerts scan complete">
+        <h3>Notifications</h3>
+        <label class="toggle">
+            <span>High Threat Alerts</span>
+            <input type="checkbox" id="threatAlerts" {% if settings_data.threat_alerts %}checked{% endif %}>
+            <span class="slider"></span>
+        </label>
+        <label class="toggle">
+            <span>Scan Complete Notification</span>
+            <input type="checkbox" id="scanComplete" {% if settings_data.scan_complete %}checked{% endif %}>
+            <span class="slider"></span>
+        </label>
+        <label class="toggle">
+            <span>Auto Refresh Dashboard</span>
+            <input type="checkbox" id="autoRefresh" {% if settings_data.auto_refresh %}checked{% endif %}>
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="settings-section setting-item" data-name="data reset cache">
+        <h3>Data</h3>
+        <div class="settings-actions">
+            <button class="btn-primary" type="button" onclick="saveSettings()">
+                <i class="fas fa-save"></i> Save Settings
+            </button>
+            <button class="btn-danger" type="button" onclick="resetData()">
+                <i class="fas fa-trash"></i> Reset All Reports
+            </button>
+            <button class="btn-secondary" type="button" onclick="clearCache()">Clear Browser Cache</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

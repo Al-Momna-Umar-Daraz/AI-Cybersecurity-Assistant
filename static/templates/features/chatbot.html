@@ -1,0 +1,106 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <i class="fas fa-comments"></i>
+        <h1>CyberBot AI</h1>
+    </div>
+
+    <div id="chatMessages" class="chat-messages">
+        <div class="message bot">
+            <div class="message-content">
+                Hi! I am CyberBot. I can help with cybersecurity questions and guide you to analysis tools.
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-input">
+        <input type="text" id="chatInput" placeholder="Ask about cybersecurity...">
+        <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    if (!message) return;
+
+    addMessage(message, 'user');
+    input.value = '';
+
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '') : '';
+
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify({message: message})
+    })
+    .then(res => res.text().then(text => {
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (ct.indexOf('application/json') === -1) {
+            return { ok: false, data: { error: 'Unexpected server response. Please login again and retry.' } };
+        }
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (_) {
+            data = { error: 'Invalid JSON response from server.' };
+        }
+        return { ok: res.ok, data: data };
+    }))
+    .then(({ ok, data }) => {
+        if (!ok) {
+            addMessage((data && (data.error || data.message)) || 'Chat request failed.', 'bot');
+            if (window.updateModuleInsight) {
+                window.updateModuleInsight({
+                    score: 45,
+                    status: 'WARNING',
+                    message: (data && (data.error || data.message)) || 'Chat request failed.'
+                });
+            }
+            return;
+        }
+        addMessage((data && data.response) || 'No response.', 'bot');
+        if (window.updateModuleInsight) {
+            window.updateModuleInsight({
+                score: 18,
+                status: 'SAFE',
+                message: 'Chatbot response generated.',
+                suggestions: ['Try keywords: command, password, url, attack.']
+            });
+        }
+    })
+    .catch(() => {
+        addMessage('Chat request failed.', 'bot');
+        if (window.updateModuleInsight) {
+            window.updateModuleInsight({ score: 50, status: 'WARNING', message: 'Chat request failed.' });
+        }
+    });
+}
+
+function addMessage(text, sender) {
+    const messages = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = `message ${sender}`;
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    content.textContent = String(text || '');
+    div.appendChild(content);
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+document.getElementById('chatInput')?.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+</script>
+{% endblock %}

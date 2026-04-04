@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="analyzer-container">
+    <h1><i class="fas fa-terminal"></i> Command Analyzer</h1>
+    <p class="muted-text">Enter a command and click Analyze to see risk score, status, command definition, usage, and output preview.</p>
+
+    <div class="input-section mt-1">
+        <label for="commandInput"><strong>Command Input</strong></label>
+        <textarea id="commandInput" placeholder="Example: ls -la /var/log"></textarea>
+        <button id="commandAnalyzeBtn" type="button" class="btn-analyze">
+            <i class="fas fa-search"></i> Analyze Command
+        </button>
+    </div>
+
+    <div id="resultSection" class="result-section hidden">
+        <div class="threat-score">
+            <div class="score-circle" id="scoreCircle">
+                <span id="scoreValue">0</span>%
+            </div>
+            <div id="threatStatus">UNKNOWN</div>
+        </div>
+
+        <div class="threat-details mt-1">
+            <h3>Risk Findings</h3>
+            <ul id="threatList"></ul>
+        </div>
+
+        <div class="settings-section mt-1">
+            <h3>Command Info</h3>
+            <p><strong>Command:</strong> <code id="cmdPrimary">-</code></p>
+            <p><strong>Definition:</strong> <span id="cmdDefinition">-</span></p>
+            <p><strong>Usage:</strong> <span id="cmdUsage">-</span></p>
+            <p><strong>Safe Example:</strong> <code id="cmdExample">-</code></p>
+            <p><strong>Output Preview:</strong></p>
+            <pre id="cmdOutputPreview" class="mini-terminal-output">-</pre>
+        </div>
+    </div>
+
+    <div class="settings-section mt-1">
+        <h3>Quick Command Reference</h3>
+        <div class="table-wrap">
+            <table class="command-guide-table">
+                <thead>
+                    <tr>
+                        <th>Command</th>
+                        <th>Risk</th>
+                        <th>Definition</th>
+                        <th>Usage</th>
+                        <th>Example</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in (command_guide or []) %}
+                    <tr>
+                        <td><code>{{ item.command }}</code></td>
+                        <td class="{% if item.risk == 'SAFE' %}safe{% elif item.risk == 'WARNING' %}warning{% else %}danger{% endif %}">{{ item.risk }}</td>
+                        <td>{{ item.what_happens }}</td>
+                        <td>{{ item.how_to_use }}</td>
+                        <td><code>{{ item.example }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+    const commandGuide = {{ (command_guide or [])|tojson }};
+
+    function byId(id) { return document.getElementById(id); }
+    function safeText(value) { return String(value || '').replace(/[<>]/g, ''); }
+    function riskClass(score) { return score < 30 ? 'safe' : score < 70 ? 'warning' : 'danger'; }
+    function csrfToken() {
+        const node = document.querySelector('meta[name="csrf-token"]');
+        return node ? (node.getAttribute('content') || '') : '';
+    }
+    function primaryCommand(input) {
+        const text = String(input || '').trim();
+        if (!text) return '';
+        return text.split(/\s+/)[0].toLowerCase();
+    }
+    function findCommandDoc(cmd) {
+        if (!cmd) return null;
+        for (let i = 0; i < commandGuide.length; i += 1) {
+            if (String(commandGuide[i].key || '').toLowerCase() === cmd) {
+                return commandGuide[i];
+            }
+        }
+        return null;
+    }
+    function outputPreview(doc, commandText) {
+        if (doc && doc.output_example) return String(doc.output_example);
+        const t = String(commandText || '').trim();
+        if (!t) return '-';
+        return 'No predefined preview for this command. Use with caution and verify flags/arguments.';
+    }
+    function setCommandInfo(commandText) {
+        const cmd = primaryCommand(commandText);
+        const doc = findCommandDoc(cmd);
+        byId('cmdPrimary').textContent = cmd || '-';
+        byId('cmdDefinition').textContent = doc ? doc.what_happens : 'No built-in definition found for this command.';
+        byId('cmdUsage').textContent = doc ? doc.how_to_use : 'Review command manual before executing in production.';
+        byId('cmdExample').textContent = doc ? doc.example : (cmd ? (cmd + ' --help') : '-');
+        byId('cmdOutputPreview').textContent = outputPreview(doc, commandText);
+    }
+
+    function analyzeCommand() {
+        const field = byId('commandInput');
+        const value = field ? field.value.trim() : '';
+        if (!value) {
+            alert('Please enter a command.');
+            return;
+        }
+
+        fetch('/api/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken()
+            },
+            body: JSON.stringify({ input: value, type: 'command' })
+        })
+            .then(function (res) {
+                return res.text().then(function (text) {
+                    var ct = (res.headers.get('content-type') || '').toLowerCase();
+                    if (ct.indexOf('application/json') === -1) {
+                        throw new Error('Unexpected server response. Please login again and retry.');
+                    }
+                    var data = {};
+                    try {
+                        data = text ? JSON.parse(text) : {};
+                    } catch (_) {
+                        throw new Error('Invalid JSON response from server.');
+                    }
+                    if (!res.ok) throw new Error((data && (data.error || data.message)) || 'Command analysis failed.');
+                    return data;
+                });
+            })
+            .then(function (data) {
+                const score = Number(data.score || 0);
+                const status = data.status || 'UNKNOWN';
+                const threats = Array.isArray(data.threats) ? data.threats : [];
+
+                byId('scoreValue').textContent = String(score);
+                byId('threatStatus').textContent = status;
+                byId('scoreCircle').className = 'score-circle ' + riskClass(score);
+                byId('threatList').innerHTML = threats.length
+                    ? threats.map(function (t) { return '<li>' + safeText(t) + '</li>'; }).join('')
+                    : '<li>No major threat patterns detected.</li>';
+
+                setCommandInfo(value);
+                byId('resultSection').classList.remove('hidden');
+
+                if (typeof window.updateModuleInsight === 'function') {
+                    window.updateModuleInsight({
+                        score: score,
+                        status: status,
+                        message: threats[0] || 'Command analysis completed.',
+                        suggestions: [byId('cmdUsage').textContent]
+                    });
+                }
+            })
+            .catch(function (err) {
+                const msg = (err && (err.error || err.message)) ? (err.error || err.message) : 'Command analysis failed.';
+                byId('threatStatus').textContent = msg;
+                setCommandInfo(value);
+                byId('resultSection').classList.remove('hidden');
+                if (typeof window.updateModuleInsight === 'function') {
+                    window.updateModuleInsight({ score: 50, status: 'WARNING', message: msg });
+                }
+            });
+    }
+
+    function bind() {
+        const btn = byId('commandAnalyzeBtn');
+        const input = byId('commandInput');
+        if (btn) btn.addEventListener('click', analyzeCommand);
+        if (input) {
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    analyzeCommand();
+                }
+            });
+        }
+    }
+
+    window.analyzeCommand = analyzeCommand;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+})();
+</script>
+{% endblock %}

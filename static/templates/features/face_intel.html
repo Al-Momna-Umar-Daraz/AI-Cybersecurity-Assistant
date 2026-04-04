@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="analyzer-container">
+    <h1><i class="fas fa-camera"></i> Face Recognition Intel (FaceCheck)</h1>
+    <p class="muted-text">Upload a face image to search public matches and detect impersonation risk. This tool does not identify private persons or extract personal social media identities.</p>
+
+    <div class="input-section">
+        <input type="file" id="faceImageInput" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+        <label class="consent-row">
+            <input type="checkbox" id="faceConsentCheck">
+            <span>I confirm this image is authorized for lawful security analysis.</span>
+        </label>
+        <button onclick="runFaceIntel()" class="btn-analyze"><i class="fas fa-search"></i> Scan Face Match</button>
+        <p class="muted-text">
+            Direct link:
+            <a href="{{ facecheck_base_url }}" target="_blank" rel="noopener noreferrer">{{ facecheck_base_url }}</a>
+        </p>
+        {% if not facecheck_enabled %}
+        <p class="warning">Server API token not configured. Set <code>FACECHECK_API_TOKEN</code> to enable in-app scanning.</p>
+        {% endif %}
+    </div>
+
+    <div id="faceResultSection" class="result-section hidden">
+        <div class="threat-score">
+            <div class="score-circle" id="faceScoreCircle"><span id="faceScoreValue">0</span>%</div>
+            <div>
+                <div id="faceStatus">UNKNOWN</div>
+                <small id="faceMessage" class="muted-text"></small>
+            </div>
+        </div>
+        <div class="threat-details">
+            <h3>Top Public Similarity Matches</h3>
+            <ul id="faceMatchList"></ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

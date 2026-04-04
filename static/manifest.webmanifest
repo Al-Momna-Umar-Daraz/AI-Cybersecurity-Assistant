@@ -1,0 +1,24 @@
+﻿{
+  "name": "AI Cybersecurity Assistant",
+  "short_name": "AI C-Sec",
+  "description": "AI-powered cybersecurity toolkit with threat analysis, breach checks, Linux lab, and secure assistant.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111317",
+  "theme_color": "#f5b301",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

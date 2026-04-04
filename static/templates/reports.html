@@ -1,0 +1,63 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="reports-container">
+    <h1><i class="fas fa-file-alt"></i> Analysis Reports</h1>
+
+    <div class="toolbar-row">
+        <div class="toolbar-item">
+            <label for="reportFilter">Filter</label>
+            <select id="reportFilter" onchange="applyReportFilter()">
+                <option value="all" {% if report_filter == 'all' %}selected{% endif %}>All Time</option>
+                <option value="today" {% if report_filter == 'today' %}selected{% endif %}>Today</option>
+                <option value="week" {% if report_filter == 'week' %}selected{% endif %}>This Week</option>
+            </select>
+        </div>
+        <div class="toolbar-item toolbar-grow">
+            <label for="reportSearch">Search</label>
+            <input id="reportSearch" type="text" placeholder="Example: suspicious.tk, WARNING, linux, encryption" value="{{ keyword }}">
+        </div>
+        <button class="btn-primary" type="button" onclick="applyReportFilter()">
+            <i class="fas fa-search"></i> Search
+        </button>
+        <button class="btn-export" type="button" onclick="exportReport()">
+            <i class="fas fa-download"></i> Export PDF
+        </button>
+    </div>
+
+    <div class="reports-list">
+        {% if reports and reports|length > 0 %}
+            {% for report in reports %}
+            <div class="report-item">
+                <div class="report-header">
+                    <span>{{ report.input_type|capitalize }} Analysis - {{ report.input_text }}</span>
+                    <span class="{% if report.score >= 70 %}danger{% elif report.score >= 30 %}warning{% else %}safe{% endif %}">
+                        {{ report.status }} {{ report.score }}%
+                    </span>
+                </div>
+                <div class="report-meta">
+                    <span><i class="fas fa-clock"></i> {{ report.created_at }}</span>
+                    <span>{{ report.input_type|capitalize }} Analyzer</span>
+                </div>
+                {% if report.threats %}
+                <ul class="report-threats">
+                    {% for item in report.threats %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="report-item">
+                <div class="report-header">
+                    <span>No reports found for this filter.</span>
+                </div>
+                <div class="report-meta">
+                    <span>Run any feature scan to generate reports automatically.</span>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

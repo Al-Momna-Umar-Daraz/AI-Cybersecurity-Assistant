@@ -1,0 +1,208 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="analyzer-container">
+    <h1><i class="fas fa-user-shield"></i> Email Breach Checker</h1>
+    <p class="muted-text">Enter your Gmail/email and open Have I Been Pwned directly for live breach results.</p>
+
+    <div class="input-section">
+        <input type="email" id="breachEmailInput" placeholder="Enter Gmail (e.g. yourname@gmail.com)">
+    </div>
+
+    <div class="settings-section mt-1">
+        <h3><i class="fas fa-info-circle"></i> How To Use</h3>
+        <ul class="report-threats">
+            <li>Type your email/Gmail in the input field.</li>
+            <li>Click the button below.</li>
+            <li>You will be redirected to Have I Been Pwned with your email in the URL.</li>
+        </ul>
+    </div>
+
+    <div class="input-section mt-1">
+        <button id="breachOpenHibpBtn" type="button" onclick="checkEmailBreach()" class="btn-analyze breach-open-btn">
+            <i class="fas fa-external-link-alt"></i> Check on HaveIBeenPwned
+        </button>
+    </div>
+
+    <div id="breachOutputSection" class="result-section">
+        <div class="threat-score">
+            <div class="score-circle" id="breachOutputCircle">
+                <span id="breachOutputRisk">0</span>%
+            </div>
+            <div>
+                <div id="breachOutputStatus">READY</div>
+                <small id="breachOutputMessage" class="muted-text">Enter email and click button to run.</small>
+            </div>
+        </div>
+        <div class="threat-details mt-1">
+            <h3>Search Output</h3>
+            <ul id="breachOutputDetails">
+                <li>Result panel is active.</li>
+                <li>Your domain risk notes will appear here.</li>
+                <li>Live HIBP result opens in a new tab.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+    function byId(id) { return document.getElementById(id); }
+    function safeText(v) {
+        return String(v || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    function riskClass(score) {
+        if (score < 30) return 'safe';
+        if (score < 70) return 'warning';
+        return 'danger';
+    }
+    function validEmail(email) {
+        return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email || '').trim());
+    }
+    function computeLocalRisk(email) {
+        var e = String(email || '').trim().toLowerCase();
+        var domain = e.indexOf('@') >= 0 ? e.split('@')[1] : '';
+        var score = 15;
+        var notes = [];
+        if (!domain) {
+            score = 45;
+            notes.push('Email domain could not be parsed.');
+        } else {
+            if (domain.indexOf('-') >= 0) {
+                score += 18;
+                notes.push('Domain contains hyphen(s), review carefully.');
+            }
+            if ((domain.match(/\./g) || []).length >= 2) {
+                score += 12;
+                notes.push('Multi-level domain detected, verify authenticity.');
+            }
+            if (/(\.ru|\.tk|\.xyz|\.top|\.click)$/.test(domain)) {
+                score += 35;
+                notes.push('Higher-risk TLD pattern detected.');
+            }
+        }
+        score = Math.max(0, Math.min(100, score));
+        var status = score < 30 ? 'SAFE' : (score < 70 ? 'WARNING' : 'DANGEROUS');
+        if (!notes.length) notes.push('No high-risk domain pattern detected locally.');
+        return { score: score, status: status, domain: domain || 'unknown', notes: notes };
+    }
+
+    function renderOutput(data) {
+        var section = byId('breachOutputSection');
+        var scoreNode = byId('breachOutputRisk');
+        var statusNode = byId('breachOutputStatus');
+        var msgNode = byId('breachOutputMessage');
+        var listNode = byId('breachOutputDetails');
+        var circleNode = byId('breachOutputCircle');
+        if (!section || !scoreNode || !statusNode || !msgNode || !listNode || !circleNode) return;
+
+        scoreNode.textContent = String(Number(data.score || 0));
+        statusNode.textContent = String(data.status || 'UNKNOWN');
+        msgNode.textContent = String(data.message || '-');
+        circleNode.className = 'score-circle ' + riskClass(Number(data.score || 0));
+        listNode.innerHTML = (Array.isArray(data.details) ? data.details : []).map(function (item) {
+            return '<li>' + safeText(item) + '</li>';
+        }).join('');
+        section.classList.remove('hidden');
+    }
+
+    function openHibpForEmail(email) {
+        var e = String(email || '').trim().toLowerCase();
+        var url = 'https://haveibeenpwned.com/';
+        if (validEmail(e)) {
+            url = 'https://haveibeenpwned.com/account/' + encodeURIComponent(e);
+        }
+        return window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function openHibp() {
+        const emailNode = byId('breachEmailInput');
+        const email = emailNode ? emailNode.value.trim().toLowerCase() : '';
+        if (!email) { alert('Email is required. Please retype and try again.'); return; }
+        if (!validEmail(email)) { alert('Invalid email format. Please retype and try again.'); return; }
+
+        var btn = byId('breachOpenHibpBtn');
+        if (btn) {
+            btn.classList.add('breach-btn-active');
+            window.setTimeout(function () { btn.classList.remove('breach-btn-active'); }, 360);
+        }
+
+        var local = computeLocalRisk(email);
+        var targetUrl = 'https://haveibeenpwned.com/account/' + encodeURIComponent(email);
+        renderOutput({
+            score: local.score,
+            status: local.status,
+            message: 'Opening live breach check page...',
+            details: [
+                'Email: ' + email,
+                'Domain analyzed: ' + local.domain,
+                'Destination: ' + targetUrl
+            ].concat(local.notes)
+        });
+        var popup = openHibpForEmail(email);
+        var opened = !!(popup && !popup.closed);
+
+        renderOutput({
+            score: local.score,
+            status: local.status,
+            message: opened
+                ? 'Live check opened in new tab. Review official result there.'
+                : 'Popup blocked by browser. Click the link below manually.',
+            details: [
+                'Email: ' + email,
+                'Domain analyzed: ' + local.domain,
+                'Destination: ' + targetUrl,
+                opened ? 'Result page opened successfully.' : 'Allow popups for this site to open automatically.'
+            ].concat(local.notes)
+        });
+
+        if (typeof window.updateModuleInsight === 'function') {
+            window.updateModuleInsight({
+                score: local.score,
+                status: local.status,
+                message: opened ? 'HIBP live page opened.' : 'Popup blocked, open HIBP link manually.',
+                suggestions: local.notes.slice(0, 4)
+            });
+        }
+    }
+
+    window.checkEmailBreach = openHibp;
+
+    function bind() {
+        var input = byId('breachEmailInput');
+        if (input && !input.dataset.bound) {
+            input.dataset.bound = '1';
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    openHibp();
+                }
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+    renderOutput({
+        score: 0,
+        status: 'READY',
+        message: 'Enter email and click button to run.',
+        details: [
+            'Result panel is active.',
+            'Output updates immediately after click.',
+            'Allow popup if browser blocks new tab.'
+        ]
+    });
+})();
+</script>
+{% endblock %}

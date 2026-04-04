@@ -1,0 +1,68 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard">
+    <h1><i class="fas fa-chart-pie"></i> Analysis Dashboard</h1>
+
+    <div class="toolbar-row">
+        <div class="toolbar-item">
+            <label for="analysisFilter">Filter</label>
+            <select id="analysisFilter">
+                <option value="all" {% if report_filter == 'all' %}selected{% endif %}>All Time</option>
+                <option value="today" {% if report_filter == 'today' %}selected{% endif %}>Today</option>
+                <option value="week" {% if report_filter == 'week' %}selected{% endif %}>This Week</option>
+            </select>
+        </div>
+        <div class="toolbar-item toolbar-grow">
+            <label for="analysisSearch">Search</label>
+            <input id="analysisSearch" type="text" placeholder="Example: rm -rf, DANGEROUS, breach, portscan, facecheck" value="{{ keyword }}">
+        </div>
+        <button class="btn-secondary" type="button" onclick="refreshAnalysisDashboard()">
+            <i class="fas fa-sync"></i> Refresh
+        </button>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-box">
+            <h2 id="totalScans">{{ summary.total_scans }}</h2>
+            <p>Total Scans</p>
+        </div>
+        <div class="stat-box">
+            <h2 id="threatScore">{{ summary.avg_threat_score }}</h2>
+            <p>Avg Threat Score</p>
+        </div>
+        <div class="stat-box safe">
+            <h2 id="safePct">{{ summary.safe_percent }}%</h2>
+            <p>Safe Items</p>
+        </div>
+        <div class="stat-box warning">
+            <h2 id="warningPct">{{ summary.warning_percent }}%</h2>
+            <p>Warnings</p>
+        </div>
+        <div class="stat-box danger">
+            <h2 id="dangerPct">{{ summary.dangerous_percent }}%</h2>
+            <p>Dangerous</p>
+        </div>
+    </div>
+
+    <div class="charts-container">
+        <canvas id="threatChart"></canvas>
+        <canvas id="typeChart"></canvas>
+        <canvas id="trendChart" class="trend-chart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script nonce="{{ csp_nonce }}">
+window.analysisBootstrap = {
+    filter: "{{ report_filter }}",
+    keyword: "{{ keyword }}",
+    statusCounts: {{ summary.status_counts|tojson }},
+    typeCounts: {{ summary.type_counts|tojson }},
+    typeRisk: {{ summary.type_risk|tojson }},
+    trend: {{ summary.trend|tojson }}
+};
+</script>
+{% endblock %}

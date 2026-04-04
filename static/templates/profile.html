@@ -1,0 +1,45 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Profile - CyberShield AI{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <h1><i class="fas fa-id-card"></i> My Profile</h1>
+
+    <div class="profile-card">
+        <div class="profile-avatar-wrap">
+            {% if current_user_avatar %}
+            <img src="{{ current_user_avatar }}" alt="Profile" class="profile-avatar">
+            {% else %}
+            <div class="profile-avatar placeholder"><i class="fas fa-user"></i></div>
+            {% endif %}
+        </div>
+        <div class="profile-meta">
+            <h3>{{ current_user_name }}</h3>
+            <p>{{ current_user_email }}</p>
+            <p>{{ current_user_phone }}</p>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <h3>Update Profile</h3>
+        <form method="POST" enctype="multipart/form-data" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <label for="name">Full Name</label>
+            <input id="name" name="name" type="text" required value="{{ current_user_name }}">
+
+            <label for="email">Gmail / Email</label>
+            <input id="email" name="email" type="email" required value="{{ current_user_email }}">
+
+            <label for="phone">Phone Number</label>
+            <input id="phone" name="phone" type="tel" required value="{{ current_user_phone }}">
+
+            <label for="profile_image">Profile Picture</label>
+            <input id="profile_image" name="profile_image" type="file" accept="image/png,image/jpeg,image/webp">
+
+            <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Profile</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

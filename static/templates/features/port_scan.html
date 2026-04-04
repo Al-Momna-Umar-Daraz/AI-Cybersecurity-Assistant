@@ -1,0 +1,354 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<div class="analyzer-container">
+    <h1><i class="fas fa-network-wired"></i> Port Scanner</h1>
+    <p class="muted-text">Run live network port scan and view structured output like risk score, open ports, risky services, and full scan details.</p>
+
+    <div class="settings-section mt-1">
+        <h3><i class="fas fa-info-circle"></i> How To Use</h3>
+        <ul class="report-threats">
+            <li>Enter host/IP (example: <code>8.8.8.8</code> or <code>google.com</code>).</li>
+            <li>Enter ports (example: <code>21,22,80,443</code> or <code>1-1024</code>).</li>
+            <li>Click <strong>Start Port Scan</strong> for live output.</li>
+        </ul>
+    </div>
+
+    <div class="input-section mt-1">
+        <input type="text" id="portHostInput" placeholder="Host or IP (example.com or 8.8.8.8)">
+        <input type="text" id="portListInput" placeholder="Ports (e.g. 21,22,80,443 or 1-1024)">
+        <button id="portScanBtn" type="button" onclick="runPortScan()" class="btn-analyze"><i class="fas fa-search"></i> Start Port Scan</button>
+    </div>
+
+    <div id="portResultSection" class="result-section">
+        <div class="threat-score">
+            <div class="score-circle" id="portScoreCircle"><span id="portScoreValue">0</span>%</div>
+            <div>
+                <div id="portStatus">READY</div>
+                <small id="portMessage" class="muted-text">Click Start Port Scan to get live output.</small>
+                <br>
+                <small id="portModeLabel" class="muted-text">Mode: Live Scan</small>
+                <br>
+                <small id="portScanTime" class="muted-text">Scan Time: -</small>
+            </div>
+        </div>
+
+        <div class="url-result-grid mt-1">
+            <div class="stat-box">
+                <h2 id="portTargetIp">-</h2>
+                <p>Target IP</p>
+            </div>
+            <div class="stat-box">
+                <h2 id="portRiskPercent">0%</h2>
+                <p>Risk Percentage</p>
+            </div>
+            <div class="stat-box">
+                <h2 id="portSafePercent">100%</h2>
+                <p>Safe Percentage</p>
+            </div>
+            <div class="stat-box">
+                <h2 id="portOpenCount">0</h2>
+                <p>Open Ports</p>
+            </div>
+            <div class="stat-box">
+                <h2 id="portRiskyCount">0</h2>
+                <p>Risky Open Ports</p>
+            </div>
+        </div>
+
+        <div class="threat-details mt-1">
+            <h3>Open Ports Summary</h3>
+            <ul id="portListResult">
+                <li>Scan not started yet.</li>
+            </ul>
+        </div>
+
+        <div class="threat-details mt-1">
+            <h3>Detailed Scan Table</h3>
+            <div class="table-wrap">
+                <table class="command-guide-table">
+                    <thead>
+                        <tr>
+                            <th>Port</th>
+                            <th>Service</th>
+                            <th>State</th>
+                            <th>Risk</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portTableBody">
+                        <tr><td colspan="4">Scan not started yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="threat-details mt-1">
+            <h3>Raw Output</h3>
+            <pre id="portRawOutput" class="mini-terminal-output">-</pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+    function byId(id) { return document.getElementById(id); }
+    function safeText(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    function riskClass(score) {
+        if (score < 30) return 'safe';
+        if (score < 70) return 'warning';
+        return 'danger';
+    }
+    function nowStamp() {
+        try { return new Date().toLocaleString(); } catch (_) { return '-'; }
+    }
+    function csrfToken() {
+        const node = document.querySelector('meta[name="csrf-token"]');
+        return node ? (node.getAttribute('content') || '') : '';
+    }
+    function normalizeHost(raw) {
+        const value = String(raw || '').trim();
+        if (!value) return '';
+        try {
+            const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value) ? value : ('http://' + value);
+            const u = new URL(withScheme);
+            return String(u.hostname || '').trim().toLowerCase();
+        } catch (_) {
+            return value.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
+        }
+    }
+    function parsePortsInput(portText) {
+        const text = String(portText || '').trim();
+        if (!text) return { ports: [], invalid: false, invalidParts: [] };
+        const out = [];
+        const invalidParts = [];
+        text.split(',').forEach(function (chunk) {
+            const part = chunk.trim();
+            if (!part) return;
+            if (part.indexOf('-') >= 0) {
+                const sides = part.split('-', 2);
+                const a = Number(sides[0]);
+                const b = Number(sides[1]);
+                if (Number.isInteger(a) && Number.isInteger(b) && a > 0 && b > 0 && a <= 65535 && b <= 65535 && a <= b) {
+                    for (let i = a; i <= b && out.length < 200; i += 1) out.push(i);
+                } else {
+                    invalidParts.push(part);
+                }
+            } else {
+                const n = Number(part);
+                if (Number.isInteger(n) && n > 0 && n <= 65535) {
+                    out.push(n);
+                } else {
+                    invalidParts.push(part);
+                }
+            }
+        });
+        return {
+            ports: Array.from(new Set(out)).slice(0, 200),
+            invalid: invalidParts.length > 0,
+            invalidParts: invalidParts
+        };
+    }
+
+    function renderPortResult(data) {
+        const score = Number(data.score || 0);
+        const safePercent = Math.max(0, 100 - score);
+        const status = data.status || 'UNKNOWN';
+        const msg = (data.message || '') + (data.target_ip ? (' IP: ' + data.target_ip) : '');
+        const results = Array.isArray(data.results) ? data.results : [];
+        const openItems = results.filter(function (r) { return !!r.open; });
+        const riskyPorts = [21, 22, 23, 25, 53, 80, 110, 139, 143, 443, 445, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080];
+        const riskyOpen = openItems.filter(function (r) { return riskyPorts.indexOf(Number(r.port || 0)) >= 0; });
+
+        byId('portScoreValue').textContent = String(score);
+        byId('portStatus').textContent = status;
+        byId('portMessage').textContent = msg || '-';
+        byId('portScoreCircle').className = 'score-circle ' + riskClass(score);
+        byId('portTargetIp').textContent = safeText(data.target_ip || '-');
+        byId('portRiskPercent').textContent = String(score) + '%';
+        byId('portSafePercent').textContent = String(safePercent) + '%';
+        byId('portOpenCount').textContent = String(openItems.length);
+        byId('portRiskyCount').textContent = String(riskyOpen.length);
+        byId('portModeLabel').textContent = 'Mode: Live Scan';
+        byId('portScanTime').textContent = 'Scan Time: ' + nowStamp();
+
+        const list = byId('portListResult');
+        list.innerHTML = openItems.length
+            ? openItems.map(function (r) {
+                return '<li>Port ' + Number(r.port || 0) + ' (' + safeText(r.service || 'Unknown') + ') - OPEN</li>';
+            }).join('')
+            : '<li>No open ports found in selected range.</li>';
+
+        const body = byId('portTableBody');
+        if (body) {
+            body.innerHTML = results.length
+                ? results.map(function (r) {
+                    const port = Number(r.port || 0);
+                    const service = safeText(r.service || 'Unknown');
+                    const isOpen = !!r.open;
+                    const state = isOpen ? 'OPEN' : 'CLOSED';
+                    const risk = isOpen && riskyPorts.indexOf(port) >= 0 ? 'RISKY' : (isOpen ? 'OPEN' : 'LOW');
+                    const riskCls = risk === 'RISKY' ? 'danger' : (risk === 'OPEN' ? 'warning' : 'safe');
+                    return '<tr>' +
+                        '<td>' + port + '</td>' +
+                        '<td>' + service + '</td>' +
+                        '<td>' + state + '</td>' +
+                        '<td class="' + riskCls + '">' + risk + '</td>' +
+                        '</tr>';
+                }).join('')
+                : '<tr><td colspan="4">No port rows available.</td></tr>';
+        }
+
+        const rawNode = byId('portRawOutput');
+        if (rawNode) {
+            rawNode.textContent = JSON.stringify({
+                ok: data.ok,
+                status: status,
+                score_percent: String(score) + '%',
+                safe_percent: String(safePercent) + '%',
+                message: data.message || '',
+                target_ip: data.target_ip || '',
+                open_ports: openItems.map(function (r) { return Number(r.port || 0); }),
+                results: results
+            }, null, 2);
+        }
+
+        byId('portResultSection').classList.remove('hidden');
+        if (typeof window.updateModuleInsight === 'function') {
+            window.updateModuleInsight({
+                score: score,
+                status: status,
+                message: data.message || 'Port scan completed.',
+                output_lines: [
+                    'Target IP: ' + (data.target_ip || '-'),
+                    'Risk Score: ' + score + '%',
+                    'Safe Percentage: ' + safePercent + '%',
+                    'Open Ports: ' + openItems.length,
+                    'Risky Open Ports: ' + riskyOpen.length,
+                    'Status: ' + status
+                ].concat(openItems.slice(0, 4).map(function (r) {
+                    return 'OPEN ' + Number(r.port || 0) + ' (' + String(r.service || 'Unknown') + ')';
+                })),
+                suggestions: openItems.length
+                    ? ['Close unnecessary open ports.', 'Restrict admin ports by firewall allowlist.']
+                    : ['No major exposed ports detected in selected range.']
+            });
+        }
+    }
+
+    function setBusy(isBusy) {
+        const btn = byId('portScanBtn');
+        if (!btn) return;
+        btn.disabled = !!isBusy;
+        if (isBusy) {
+            btn.dataset.originalText = btn.dataset.originalText || btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
+        } else if (btn.dataset.originalText) {
+            btn.innerHTML = btn.dataset.originalText;
+        }
+    }
+
+    window.runPortScan = function runPortScan() {
+        const hostRaw = (byId('portHostInput') || {}).value || '';
+        const host = normalizeHost(hostRaw);
+        const ports = ((byId('portListInput') || {}).value || '').trim();
+
+        if (!host) { alert('Invalid input: Host/IP is required. Please retype and try again.'); return; }
+        if (!/^[a-zA-Z0-9.-]+$/.test(host)) { alert('Invalid input: Host format is incorrect. Please retype and try again.'); return; }
+        if (ports && !/^[0-9,\-\s]+$/.test(ports)) { alert('Invalid input: Ports format is incorrect. Use numbers, commas, and ranges only.'); return; }
+
+        const parsed = parsePortsInput(ports);
+        if (ports && parsed.invalid) {
+            alert('Invalid input: Wrong port value(s): ' + parsed.invalidParts.join(', ') + '. Please retype.');
+            return;
+        }
+        if (ports && parsed.ports.length === 0) { alert('Invalid input: No valid ports detected. Please retype and try again.'); return; }
+
+        setBusy(true);
+        fetch('/api/port-scan', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken()
+            },
+            credentials: 'same-origin',
+            cache: 'no-store',
+            body: JSON.stringify({ host: host, ports: ports })
+        })
+            .then(function (res) {
+                return res.text().then(function (text) {
+                    let data = null;
+                    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = null; }
+                    if (!res.ok) {
+                        const msg = data && (data.error || data.message) ? (data.error || data.message) : 'Port scan failed.';
+                        throw new Error(msg);
+                    }
+                    if (!data || typeof data !== 'object') throw new Error('Invalid server response.');
+                    return data;
+                });
+            })
+            .then(function (data) {
+                renderPortResult(data);
+            })
+            .catch(function (err) {
+                const message = (err && err.message) ? err.message : 'Port scan failed. Please retry.';
+                renderPortResult({
+                    score: 55,
+                    status: 'WARNING',
+                    message: message,
+                    target_ip: '-',
+                    results: []
+                });
+                if (typeof window.updateModuleInsight === 'function') {
+                    window.updateModuleInsight({
+                        score: 55,
+                        status: 'WARNING',
+                        message: message,
+                        output_lines: ['Scan failed.', 'Reason: ' + message]
+                    });
+                }
+            })
+            .finally(function () {
+                setBusy(false);
+            });
+    };
+
+    function bindPortKeys() {
+        var host = byId('portHostInput');
+        var ports = byId('portListInput');
+        if (host && !host.dataset.boundEnter) {
+            host.dataset.boundEnter = '1';
+            host.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    window.runPortScan();
+                }
+            });
+        }
+        if (ports && !ports.dataset.boundEnter) {
+            ports.dataset.boundEnter = '1';
+            ports.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    window.runPortScan();
+                }
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindPortKeys);
+    } else {
+        bindPortKeys();
+    }
+})();
+</script>
+{% endblock %}

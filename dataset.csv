@@ -1,0 +1,14 @@
+command,threat_level
+"rm -rf /",100
+"del *.*",95
+"format c:",98
+"net user hacker",90
+password,threat_level
+"123456",80
+"password",85
+"qwerty",75
+"abc123",70
+url,threat_level
+"bit.ly/suspicious",90
+"tinyurl.com/phish",85
+"suspicious.tk",95

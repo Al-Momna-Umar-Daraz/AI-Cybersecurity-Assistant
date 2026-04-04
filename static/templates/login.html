@@ -1,0 +1,33 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Login - CyberShield AI{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1><i class="fas fa-sign-in-alt"></i> Login</h1>
+        <p>Login with phone number or Gmail/email.</p>
+
+        <form method="POST" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="next" value="{{ next_url or '' }}">
+            <label for="identifier">Phone Or Gmail</label>
+            <input id="identifier" name="identifier" type="text" required placeholder="+923001234567 or you@gmail.com">
+
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required placeholder="Enter password">
+
+            <button type="submit" class="btn-primary"><i class="fas fa-lock-open"></i> Login</button>
+        </form>
+
+        {% if google_oauth_enabled %}
+        <div class="auth-divider"><span>OR</span></div>
+        <a href="/auth/google/login{% if next_url %}?next={{ next_url }}{% endif %}" class="btn-secondary google-btn">
+            <i class="fab fa-google"></i> Continue With Google
+        </a>
+        {% endif %}
+
+        <p class="auth-help">No account? <a href="/register">Create one</a></p>
+    </div>
+</div>
+{% endblock %}
