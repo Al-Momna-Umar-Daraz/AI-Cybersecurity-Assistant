@@ -50,6 +50,46 @@
         <canvas id="typeChart"></canvas>
         <canvas id="trendChart" class="trend-chart"></canvas>
     </div>
+
+    <div class="settings-section mt-1 dashboard-assistant-launch">
+        <div class="dashboard-assistant-copy">
+            <p class="dashboard-assistant-kicker">Chatbot</p>
+            <h3><i class="fas fa-robot"></i> Chatbot</h3>
+            <p class="muted-text">Robot par click karein ya button use karein. Aap seedha chatbot page par chalay jayenge jahan full conversation view milegi.</p>
+
+            <div class="assistant-quick-prompts">
+                <a href="/features/chatbot" class="suggestion-chip">Secure Gmail</a>
+                <a href="/features/chatbot" class="suggestion-chip">SOC Checklist</a>
+                <a href="/features/chatbot" class="suggestion-chip">Incident Response</a>
+            </div>
+
+            <div class="dashboard-assistant-actions">
+                <a href="/features/chatbot" class="btn-analyze">
+                    <i class="fas fa-paper-plane"></i> Chatbot
+                </a>
+            </div>
+        </div>
+
+        <a href="/features/chatbot" class="dashboard-robot-zone" aria-label="Open chatbot">
+            <div class="dashboard-robot-track"></div>
+            <div class="dashboard-robot-halo"></div>
+            <div class="dashboard-robot-tag">Chatbot</div>
+            <div class="dashboard-robot-runner">
+                <div class="dashboard-robot-video-shell">
+                    <video
+                        class="dashboard-robot-video"
+                        autoplay
+                        muted
+                        loop
+                        playsinline
+                        preload="auto"
+                    >
+                        <source src="{{ url_for('static', filename='videos/vedio.mp4') }}" type="video/mp4">
+                    </video>
+                </div>
+            </div>
+        </a>
+    </div>
 </div>
 {% endblock %}
 

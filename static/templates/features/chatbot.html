@@ -1,106 +1,70 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="chat-container">
-    <div class="chat-header">
-        <i class="fas fa-comments"></i>
-        <h1>CyberBot AI</h1>
-    </div>
+<div
+    id="chatbotProShell"
+    class="chat-container mobile-chat-page"
+    data-disable-insight="1"
+    data-init-model-label="{{ chat_model_label }}"
+    data-init-mode-label="{{ chat_status_label }}"
+    data-init-mode-class="{{ chat_status_class }}"
+    data-init-status-text="CyberBot is ready for your next cybersecurity question."
+    data-init-status-detail="{{ chat_status_detail }}"
+    data-init-notice-text="{{ chat_status_detail if chat_status_class != 'live' else '' }}"
+    data-init-welcome-label="CyberBot"
+    data-init-welcome-text="Hello! I am CyberBot. Ask cybersecurity questions, incident-response scenarios, and secure configuration topics."
+>
+    <div class="mobile-chat-frame">
+        <section class="mobile-chat-device">
+            <div class="mobile-chat-shell">
+                <div class="mobile-chat-head">
+                    <div class="mobile-chat-brand">
+                        <div class="mobile-chat-avatar"><i class="fas fa-robot"></i></div>
+                        <div>
+                            <div class="mobile-chat-title">CyberBot AI</div>
+                            <div id="chatbotStatusText" class="mobile-chat-subtitle">CyberBot is ready for your next cybersecurity question.</div>
+                        </div>
+                    </div>
+                    <div class="mobile-chat-head-right">
+                        <span id="chatbotModelBadge" class="pro-chat-badge model">{{ chat_model_label or 'Secure Fallback' }}</span>
+                        <span id="chatbotModeBadge" class="pro-chat-badge {{ chat_status_class }}">{{ chat_status_label or 'Ready' }}</span>
+                    </div>
+                </div>
 
-    <div id="chatMessages" class="chat-messages">
-        <div class="message bot">
-            <div class="message-content">
-                Hi! I am CyberBot. I can help with cybersecurity questions and guide you to analysis tools.
+                <div class="mobile-chat-body">
+                    <div id="chatbotNotice" class="pro-chat-notice mobile-chat-notice {% if chat_status_class == 'live' %}live hidden{% else %}fallback{% endif %}">{% if chat_status_class != 'live' %}{{ chat_status_detail }}{% endif %}</div>
+
+                    <div class="mobile-chat-prompts">
+                        <button type="button" class="suggestion-chip" onclick="useChatbotPrompt('How do I secure my Gmail account from phishing?')">Secure Gmail</button>
+                        <button type="button" class="suggestion-chip" onclick="useChatbotPrompt('Give me Linux server hardening tips.')">Linux</button>
+                        <button type="button" class="suggestion-chip" onclick="useChatbotPrompt('Create a SOC checklist for a small company.')">SOC</button>
+                        <button type="button" class="suggestion-chip" onclick="useChatbotPrompt('What should I do after suspicious login activity?')">IR</button>
+                    </div>
+
+                    <div class="mobile-chat-thread-wrap">
+                        <div class="mobile-chat-output-label">Messages</div>
+                        <div id="chatbotMessages" class="chat-messages mobile-chat-thread">
+                            <div class="message bot">
+                                <div class="message-meta">CyberBot</div>
+                                <div class="message-content">Hello! I am CyberBot. Ask cybersecurity questions, incident-response scenarios, and secure configuration topics.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mobile-chat-footer-note" id="chatbotStatusHint">
+                        <i class="fas fa-brain"></i> {{ chat_status_detail }}
+                    </div>
+                </div>
+
+                <form id="chatbotComposerForm" class="mobile-chat-composer" onsubmit="sendChatbotMessage(); return false;">
+                    <textarea id="chatInput" rows="2" placeholder="Type here and press Send..."></textarea>
+                    <div class="mobile-chat-actions">
+                        <button type="button" class="btn-secondary mobile-chat-clear pro-chat-clear" onclick="clearChatbotChat()"><i class="fas fa-trash"></i></button>
+                        <button id="chatbotSendBtn" type="submit" class="mobile-chat-send"><i class="fas fa-paper-plane"></i><span>Send</span></button>
+                    </div>
+                </form>
             </div>
-        </div>
-    </div>
-
-    <div class="chat-input">
-        <input type="text" id="chatInput" placeholder="Ask about cybersecurity...">
-        <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+        </section>
     </div>
 </div>
-
-<script nonce="{{ csp_nonce }}">
-function sendMessage() {
-    const input = document.getElementById('chatInput');
-    const message = input.value.trim();
-    if (!message) return;
-
-    addMessage(message, 'user');
-    input.value = '';
-
-    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-    const csrfToken = csrfMeta ? (csrfMeta.getAttribute('content') || '') : '';
-
-    fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-        },
-        body: JSON.stringify({message: message})
-    })
-    .then(res => res.text().then(text => {
-        const ct = (res.headers.get('content-type') || '').toLowerCase();
-        if (ct.indexOf('application/json') === -1) {
-            return { ok: false, data: { error: 'Unexpected server response. Please login again and retry.' } };
-        }
-        let data = {};
-        try {
-            data = text ? JSON.parse(text) : {};
-        } catch (_) {
-            data = { error: 'Invalid JSON response from server.' };
-        }
-        return { ok: res.ok, data: data };
-    }))
-    .then(({ ok, data }) => {
-        if (!ok) {
-            addMessage((data && (data.error || data.message)) || 'Chat request failed.', 'bot');
-            if (window.updateModuleInsight) {
-                window.updateModuleInsight({
-                    score: 45,
-                    status: 'WARNING',
-                    message: (data && (data.error || data.message)) || 'Chat request failed.'
-                });
-            }
-            return;
-        }
-        addMessage((data && data.response) || 'No response.', 'bot');
-        if (window.updateModuleInsight) {
-            window.updateModuleInsight({
-                score: 18,
-                status: 'SAFE',
-                message: 'Chatbot response generated.',
-                suggestions: ['Try keywords: command, password, url, attack.']
-            });
-        }
-    })
-    .catch(() => {
-        addMessage('Chat request failed.', 'bot');
-        if (window.updateModuleInsight) {
-            window.updateModuleInsight({ score: 50, status: 'WARNING', message: 'Chat request failed.' });
-        }
-    });
-}
-
-function addMessage(text, sender) {
-    const messages = document.getElementById('chatMessages');
-    const div = document.createElement('div');
-    div.className = `message ${sender}`;
-    const content = document.createElement('div');
-    content.className = 'message-content';
-    content.textContent = String(text || '');
-    div.appendChild(content);
-    messages.appendChild(div);
-    messages.scrollTop = messages.scrollHeight;
-}
-
-document.getElementById('chatInput')?.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        sendMessage();
-    }
-});
-</script>
 {% endblock %}

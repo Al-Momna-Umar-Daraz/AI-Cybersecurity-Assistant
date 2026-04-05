@@ -45,7 +45,6 @@
             <a href="/features/network-scan" class="nav-link"><i class="fas fa-sitemap"></i> Network</a>
             <a href="/features/encryption" class="nav-link"><i class="fas fa-key"></i> Encrypt</a>
             <a href="/features/face-intel" class="nav-link"><i class="fas fa-camera"></i> Face Intel</a>
-            <a href="/features/assistant" class="nav-link"><i class="fas fa-robot"></i> AI Assistant</a>
             <div class="top-more-wrap">
                 <button id="topMoreBtn" class="nav-link more-btn" type="button" aria-expanded="false" aria-controls="topMorePanel">
                     <i class="fas fa-bars"></i> More
@@ -74,7 +73,12 @@
                         {% endif %}
                         {{ current_user_name }}
                     </a>
-                    <a href="/logout" class="top-more-link danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                    <form method="POST" action="/logout" class="top-more-logout-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="top-more-link top-more-button danger">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </button>
+                    </form>
                 </div>
             </div>
             <button id="installAppBtn" class="nav-link install-btn hidden" type="button"><i class="fas fa-download"></i> Install App</button>
@@ -101,6 +105,7 @@
 
             <div id="quickToolsList" class="quick-tools-list">
             {% if logged_in %}
+            <a href="/" class="sidebar-link"><i class="fas fa-home"></i> Home</a>
             <a href="/features/command" class="sidebar-link"><i class="fas fa-terminal"></i> Command Analyzer</a>
             <a href="/features/password" class="sidebar-link"><i class="fas fa-lock"></i> Password Checker</a>
             <a href="/features/url" class="sidebar-link"><i class="fas fa-globe"></i> URL Scanner</a>
@@ -109,8 +114,6 @@
             <a href="/features/network-scan" class="sidebar-link"><i class="fas fa-sitemap"></i> Network AI Scan</a>
             <a href="/features/encryption" class="sidebar-link"><i class="fas fa-key"></i> Encryption Tools</a>
             <a href="/features/face-intel" class="sidebar-link"><i class="fas fa-camera"></i> Face Recognition Intel</a>
-            <a href="/features/assistant" class="sidebar-link"><i class="fas fa-robot"></i> AI Assistant</a>
-            <a href="/features/chatbot" class="sidebar-link"><i class="fas fa-comments"></i> Chatbot</a>
             <a href="/features/attack" class="sidebar-link"><i class="fas fa-bug"></i> Attack Simulator</a>
 
             <hr>

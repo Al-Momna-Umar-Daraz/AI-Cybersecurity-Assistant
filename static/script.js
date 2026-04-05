@@ -141,7 +141,7 @@
         return /^[a-zA-Z0-9_ .\-\/\\|:;=,@*]+$/.test(String(value || '').trim());
     }
 
-    var assistantHistory = [];
+    var chatHistories = { assistant: [], chatbot: [], dashboard: [] };
     var MODULE_SUGGESTIONS = {
         '/features/command': ['rm -rf /tmp', 'net user hacker /add', 'dir /a'],
         '/features/password': ['password123', 'P@ssw0rd123!', 'MySecureVault2026!'],
@@ -151,8 +151,7 @@
         '/features/network-scan': ['http://free-gift-login-secure.tk', 'https://secure-login.example'],
         '/features/encryption': ['encrypt_text:My confidential note', 'sha256:hello world', 'base64_encode:security test', 'base64_decode:U2VjdXJlIHRleHQ='],
         '/features/linux-lab': ['ls -la /var/log', 'chmod 777 /tmp/data', 'sudo rm -rf /'],
-        '/features/assistant': ['How do I harden a Linux server?', 'How can I improve password policy?', 'How to reduce phishing risk?'],
-        '/features/chatbot': ['password', 'url', 'attack'],
+        '/features/chatbot': ['How do I harden a Linux server?', 'How can I improve password policy?', 'How to reduce phishing risk?'],
         '/features/attack': ['sql', 'xss', 'ddos'],
         '/features/face-intel': ['Upload a clear face photo and click Scan Face Match']
     };
@@ -165,7 +164,6 @@
         '/features/network-scan': ['networkTargetInput'],
         '/features/encryption': ['encryptionTextInput'],
         '/features/linux-lab': ['linuxCommandInput'],
-        '/features/assistant': ['assistantInput'],
         '/features/chatbot': ['chatInput'],
         '/features/attack': ['attackSearch'],
         '/features/face-intel': ['faceImageInput']
@@ -183,6 +181,7 @@
     }
 
     function getInsightHost() {
+        if (document.querySelector('[data-disable-insight="1"]')) return null;
         return document.querySelector('.analyzer-container, .chat-container, .simulator-container');
     }
 
@@ -278,7 +277,7 @@
         } else if (key === '/features/face-intel') {
             suggestions.push('Set account privacy controls on social platforms.');
             suggestions.push('Monitor impersonation reports regularly.');
-        } else if (key === '/features/assistant' || key === '/features/chatbot') {
+        } else if (key === '/features/chatbot' || key === '/features/assistant') {
             suggestions.push('Ask module-specific questions for precise guidance.');
             suggestions.push('Follow least privilege and MFA baseline controls.');
         } else {
@@ -414,14 +413,195 @@
 
     window.updateModuleInsight = updateModuleInsight;
 
-    function addAssistantMessage(text, sender) {
-        const messages = byId('assistantMessages');
+    function addChatMessage(messagesId, text, sender, metaLabel, metaBadge) {
+        const messages = byId(messagesId);
         if (!messages) return;
         const div = document.createElement('div');
         div.className = 'message ' + (sender === 'user' ? 'user' : 'bot');
-        div.innerHTML = '<div class="message-content">' + safeText(text) + '</div>';
+        if (metaLabel) {
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            const metaText = document.createElement('span');
+            metaText.textContent = String(metaLabel);
+            meta.appendChild(metaText);
+            if (metaBadge) {
+                const badge = document.createElement('span');
+                badge.className = 'message-source-badge ' + (sender === 'user' ? 'user' : 'bot');
+                badge.textContent = String(metaBadge);
+                meta.appendChild(badge);
+            }
+            div.appendChild(meta);
+        }
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.textContent = String(text || '');
+        div.appendChild(content);
         messages.appendChild(div);
         messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setChatUiMeta(config, state) {
+        const statusNode = byId(config.statusId || '');
+        const detailNode = byId(config.detailId || '');
+        const noticeNode = byId(config.noticeId || '');
+        const modelNode = byId(config.modelId || '');
+        const modeNode = byId(config.modeId || '');
+        const next = state || {};
+
+        if (statusNode && typeof next.statusText === 'string') {
+            statusNode.textContent = next.statusText;
+        }
+        if (detailNode && typeof next.detailText === 'string') {
+            detailNode.innerHTML = '<i class="fas fa-brain"></i> ' + safeText(next.detailText);
+        }
+        if (noticeNode) {
+            const notice = String(next.noticeText || '').trim();
+            noticeNode.textContent = notice;
+            noticeNode.classList.toggle('hidden', !notice);
+            noticeNode.classList.remove('live', 'fallback');
+            noticeNode.classList.add(next.noticeClass === 'live' ? 'live' : 'fallback');
+        }
+        if (modelNode && next.modelLabel) {
+            modelNode.textContent = String(next.modelLabel);
+        }
+        if (modeNode && next.modeLabel) {
+            modeNode.textContent = String(next.modeLabel);
+            modeNode.classList.remove('live', 'fallback');
+            modeNode.classList.add(next.modeClass === 'live' ? 'live' : 'fallback');
+        }
+    }
+
+    function formatChatModelLabel(modelName, fallbackLabel) {
+        var raw = String(modelName || '').trim();
+        if (!raw) return String(fallbackLabel || 'AI Assistant');
+        if (raw === 'local-fallback') return 'Secure Fallback';
+        return raw.toUpperCase();
+    }
+
+    function buildLegacyChatFallback(userMessage) {
+        var text = String(userMessage || '').trim();
+        var lowered = text.toLowerCase();
+        if (lowered.indexOf('phishing') >= 0 || lowered.indexOf('gmail') >= 0 || lowered.indexOf('email') >= 0) {
+            return 'Sorry, I could not use the old cached reply. Here is a better answer instead:\n\n- Enable MFA on the account.\n- Do not click login links from suspicious emails.\n- Review recent sign-ins, forwarding rules, and connected apps.\n- Change the password from a trusted browser if you already clicked a suspicious link.';
+        }
+        if (lowered.indexOf('website') >= 0 || lowered.indexOf('web') >= 0 || lowered.indexOf('app') >= 0) {
+            return 'Sorry, I could not use the old cached reply. Here is a better answer instead:\n\n- Validate and sanitize input on frontend and backend.\n- Use parameterized queries and output encoding.\n- Protect sessions with CSRF defenses and secure cookies.\n- Log security events and test for common web vulnerabilities.';
+        }
+        if (lowered.indexOf('password') >= 0) {
+            return 'Sorry, I could not use the old cached reply. Here is a better answer instead:\n\n- Use at least 12 to 16 characters.\n- Keep every password unique.\n- Store passwords in a password manager.\n- Enable MFA so password theft alone is not enough.';
+        }
+        return 'Sorry, I could not use the old cached reply. Please hard refresh the page with Ctrl + F5 and restart the server so the latest chatbot logic loads correctly.';
+    }
+
+    function normalizeLegacyChatReply(replyText, userMessage) {
+        var reply = String(replyText || '').trim();
+        var legacy = 'I can help with cybersecurity analysis. Try Command Analyzer, Password Checker, or URL Scanner.';
+        if (reply === legacy) {
+            return buildLegacyChatFallback(userMessage);
+        }
+        return reply;
+    }
+
+    function getAssistantInitialState() {
+        const shell = byId('assistantProShell');
+        if (!shell) {
+            return {
+                modelLabel: 'AI Assistant',
+                modeLabel: 'Ready',
+                modeClass: 'live',
+                statusText: 'Ready for your next cybersecurity question.',
+                detailText: 'Ask a cybersecurity question to begin.',
+                noticeText: '',
+                noticeClass: 'live',
+                welcomeLabel: 'AI Assistant',
+                welcomeText: 'Hello! I am your pro cybersecurity assistant. Ask me about phishing, Gmail security, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.'
+            };
+        }
+
+        const initModeClass = String(shell.dataset.initModeClass || 'live').trim() || 'live';
+        return {
+            modelLabel: String(shell.dataset.initModelLabel || 'AI Assistant').trim() || 'AI Assistant',
+            modeLabel: String(shell.dataset.initModeLabel || 'Ready').trim() || 'Ready',
+            modeClass: initModeClass,
+            statusText: String(shell.dataset.initStatusText || 'Ready for your next cybersecurity question.').trim() || 'Ready for your next cybersecurity question.',
+            detailText: String(shell.dataset.initStatusDetail || 'Ask a cybersecurity question to begin.').trim() || 'Ask a cybersecurity question to begin.',
+            noticeText: String(shell.dataset.initNoticeText || '').trim(),
+            noticeClass: initModeClass,
+            welcomeLabel: String(shell.dataset.initWelcomeLabel || 'AI Assistant').trim() || 'AI Assistant',
+            welcomeText: String(shell.dataset.initWelcomeText || 'Hello! I am your pro cybersecurity assistant. Ask me about phishing, Gmail security, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.').trim()
+        };
+    }
+
+    function getChatbotInitialState() {
+        const shell = byId('chatbotProShell');
+        if (!shell) {
+            return {
+                modelLabel: 'CyberBot',
+                modeLabel: 'Ready',
+                modeClass: 'live',
+                statusText: 'CyberBot is ready for your next cybersecurity question.',
+                detailText: 'Ask a cybersecurity question to begin.',
+                noticeText: '',
+                noticeClass: 'live',
+                welcomeLabel: 'CyberBot',
+                welcomeText: 'Hello! I am CyberBot. Ask cybersecurity questions, incident-response scenarios, and secure configuration topics.'
+            };
+        }
+
+        const initModeClass = String(shell.dataset.initModeClass || 'live').trim() || 'live';
+        return {
+            modelLabel: String(shell.dataset.initModelLabel || 'CyberBot').trim() || 'CyberBot',
+            modeLabel: String(shell.dataset.initModeLabel || 'Ready').trim() || 'Ready',
+            modeClass: initModeClass,
+            statusText: String(shell.dataset.initStatusText || 'CyberBot is ready for your next cybersecurity question.').trim() || 'CyberBot is ready for your next cybersecurity question.',
+            detailText: String(shell.dataset.initStatusDetail || 'Ask a cybersecurity question to begin.').trim() || 'Ask a cybersecurity question to begin.',
+            noticeText: String(shell.dataset.initNoticeText || '').trim(),
+            noticeClass: initModeClass,
+            welcomeLabel: String(shell.dataset.initWelcomeLabel || 'CyberBot').trim() || 'CyberBot',
+            welcomeText: String(shell.dataset.initWelcomeText || 'Hello! I am CyberBot. Ask cybersecurity questions, incident-response scenarios, and secure configuration topics.').trim()
+        };
+    }
+
+    function removeLastChatMessage(messagesId) {
+        const messages = byId(messagesId);
+        if (messages && messages.lastElementChild) {
+            messages.removeChild(messages.lastElementChild);
+        }
+    }
+
+    function getChatModuleConfig(moduleKey) {
+        if (moduleKey === 'chatbot') {
+            return {
+                inputId: 'chatInput',
+                messagesId: 'chatbotMessages',
+                endpoint: '/api/chat',
+                loadingText: 'Thinking...',
+                successHint: 'Chat Bot response generated successfully.',
+                suggestions: ['Ask focused questions for better answers.', 'Use scan modules to validate risky indicators.'],
+                botLabel: 'CyberBot',
+                sendButtonId: 'chatbotSendBtn',
+                statusId: 'chatbotStatusText',
+                detailId: 'chatbotStatusHint',
+                noticeId: 'chatbotNotice',
+                modelId: 'chatbotModelBadge',
+                modeId: 'chatbotModeBadge'
+            };
+        }
+        return {
+            inputId: 'assistantInput',
+            messagesId: 'assistantMessages',
+            endpoint: '/api/chat',
+            loadingText: 'Thinking...',
+            successHint: 'Chat Bot response generated successfully.',
+            suggestions: ['Ask focused questions for better answers.', 'Use scan modules to validate risky indicators.'],
+            botLabel: 'AI Assistant',
+            sendButtonId: 'assistantSendBtn',
+            statusId: 'assistantStatusText',
+            detailId: 'assistantStatusHint',
+            noticeId: 'assistantNotice',
+            modelId: 'assistantModelBadge',
+            modeId: 'assistantModeBadge'
+        };
     }
 
     function renderResult(data) {
@@ -968,11 +1148,25 @@
         }
     }
 
+    function getEncryptionOutputPlaceholder() {
+        return 'Run Tool to generate output for the selected operation.';
+    }
+
+    function isEncryptionOutputPlaceholder(value) {
+        return String(value || '').trim() === getEncryptionOutputPlaceholder();
+    }
+
+    function resetEncryptionOutputPlaceholder() {
+        var outputNode = byId('encryptionOutput');
+        if (!outputNode) return;
+        outputNode.value = getEncryptionOutputPlaceholder();
+    }
+
     function renderEncryptionNotes(notes) {
         var list = byId('encryptionNotesList');
         if (!list) return;
         var items = Array.isArray(notes) ? notes.filter(Boolean) : [];
-        if (!items.length) items = ['Operation completed. Review output carefully before use.'];
+        if (!items.length) items = ['No additional security notes for this operation.'];
         list.innerHTML = items.slice(0, 6).map(function (item) {
             return '<li>' + safeText(item) + '</li>';
         }).join('');
@@ -981,7 +1175,7 @@
     window.copyEncryptionOutput = function copyEncryptionOutput() {
         var outputNode = byId('encryptionOutput');
         var value = outputNode ? String(outputNode.value || '') : '';
-        if (!value.trim()) return showInvalidInput('No output available to copy.');
+        if (!value.trim() || isEncryptionOutputPlaceholder(value)) return showInvalidInput('Run Tool first to generate output.');
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(value).then(function () {
@@ -1013,7 +1207,7 @@
         if (actionNode) actionNode.value = 'encrypt_text';
         if (textNode) textNode.value = '';
         if (secretNode) secretNode.value = '';
-        if (outputNode) outputNode.value = '';
+        if (outputNode) outputNode.value = getEncryptionOutputPlaceholder();
 
         setText('encryptionScoreValue', '0');
         setText('encryptionStatus', 'READY');
@@ -1024,7 +1218,7 @@
         setText('encryptionProcessedAt', '-');
         var circle = byId('encryptionScoreCircle');
         if (circle) circle.className = 'score-circle';
-        renderEncryptionNotes(['Run an operation to load security notes.']);
+        renderEncryptionNotes(['Run Tool to load operation-specific security notes.']);
         syncEncryptionActionUi();
     };
 
@@ -1032,6 +1226,7 @@
         var actionNode = byId('encryptionActionInput');
         if (!actionNode) return;
         syncEncryptionActionUi();
+        resetEncryptionOutputPlaceholder();
 
         if (!actionNode.dataset.boundEncryptionAction) {
             actionNode.dataset.boundEncryptionAction = '1';
@@ -1112,7 +1307,7 @@
                 setText('encryptionProcessedAt', data.processed_at || (new Date()).toLocaleTimeString());
 
                 var outputNode = byId('encryptionOutput');
-                if (outputNode) outputNode.value = output;
+                if (outputNode) outputNode.value = output || 'No textual output generated by this operation.';
 
                 var circle = byId('encryptionScoreCircle');
                 if (circle) circle.className = 'score-circle ' + getRiskClass(score);
@@ -1269,51 +1464,181 @@
             });
     };
 
-    window.sendAssistantMessage = function sendAssistantMessage() {
-        const input = byId('assistantInput');
-        const message = input ? input.value.trim() : '';
+    function sendChatMessage(moduleKey) {
+        var key = moduleKey === 'chatbot' ? 'chatbot' : 'assistant';
+        const config = getChatModuleConfig(moduleKey);
+        const input = byId(config.inputId);
+        const message = input ? String(input.value || '').trim() : '';
         if (!message) return showInvalidInput('Message is empty.');
         if (message.length < 2) return showInvalidInput('Message is too short.');
+        if (message.length > 3000) return showInvalidInput('Message is too long. Maximum 3000 characters.');
 
-        addAssistantMessage(message, 'user');
-        assistantHistory.push({ role: 'user', content: message });
+        const history = chatHistories[key] || [];
+        const runBtn = byId(config.sendButtonId || '') || (input && input.parentElement ? input.parentElement.querySelector('button') : null);
+        const oldBtnHtml = runBtn ? runBtn.innerHTML : '';
+
+        addChatMessage(config.messagesId, message, 'user', 'You');
+        history.push({ role: 'user', content: message });
+        chatHistories[key] = history;
         input.value = '';
+        input.disabled = true;
+        setChatUiMeta(config, {
+            statusText: 'Generating response...',
+            detailText: 'Generating your cybersecurity response right now.',
+            noticeText: '',
+            noticeClass: 'live',
+            modeLabel: 'Thinking',
+            modeClass: 'live'
+        });
 
-        const loadingText = 'Thinking...';
-        addAssistantMessage(loadingText, 'assistant');
+        if (runBtn) {
+            runBtn.disabled = true;
+            runBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
 
-        apiFetchJson('/api/assistant-chat', {
+        addChatMessage(config.messagesId, config.loadingText, 'assistant', config.botLabel || 'Assistant');
+
+        apiFetchJson(config.endpoint, {
             method: 'POST',
             headers: jsonHeaders(),
-            body: JSON.stringify({ message: message, history: assistantHistory })
+            body: JSON.stringify({ message: message, history: history })
         })
             .then(function (data) {
-                const messages = byId('assistantMessages');
-                if (messages && messages.lastElementChild) {
-                    messages.removeChild(messages.lastElementChild);
+                removeLastChatMessage(config.messagesId);
+                const reply = normalizeLegacyChatReply(data.reply || data.response || data.message || 'No response.', message);
+                const formattedModelLabel = data.model_label || formatChatModelLabel(data.model, config.botLabel || 'Assistant');
+                addChatMessage(config.messagesId, reply, 'assistant', config.botLabel || 'Assistant', data.status_label || formattedModelLabel);
+                history.push({ role: 'assistant', content: reply });
+                if (history.length > 30) {
+                    chatHistories[key] = history.slice(-30);
+                } else {
+                    chatHistories[key] = history;
                 }
-                const reply = data.reply || data.message || 'No response.';
-                addAssistantMessage(reply, 'assistant');
-                assistantHistory.push({ role: 'assistant', content: reply });
-                if (assistantHistory.length > 24) {
-                    assistantHistory = assistantHistory.slice(-24);
-                }
+                const modeIsLive = String(data.mode || 'ok') === 'ok';
+                setChatUiMeta(config, {
+                    statusText: data.status_text || (modeIsLive ? 'Live model responded successfully.' : 'Fallback assistant responded successfully.'),
+                    detailText: data.status_detail || (modeIsLive ? 'Connected to the configured OpenAI model.' : 'Secure fallback answers are active right now.'),
+                    noticeText: data.notice || (modeIsLive ? '' : (data.status_detail || '')),
+                    noticeClass: data.status_class || (modeIsLive ? 'live' : 'fallback'),
+                    modelLabel: formattedModelLabel,
+                    modeLabel: data.status_label || (modeIsLive ? 'Connected' : 'Secure Fallback'),
+                    modeClass: data.status_class || (modeIsLive ? 'live' : 'fallback')
+                });
                 updateModuleInsight({
                     score: 20,
                     status: 'SAFE',
-                    message: 'Assistant response generated successfully.',
-                    suggestions: ['Ask focused questions for better answers.', 'Use scan modules to validate risky indicators.']
+                    message: config.successHint,
+                    output_lines: [
+                        'Module: Chat Bot',
+                        'Status: Response generated',
+                        'Characters: ' + String(reply.length),
+                        'History window: ' + String(chatHistories[key].length)
+                    ],
+                    suggestions: config.suggestions
                 });
             })
             .catch(function (err) {
-                const messages = byId('assistantMessages');
-                if (messages && messages.lastElementChild) {
-                    messages.removeChild(messages.lastElementChild);
-                }
-                const msg = (err && err.message) ? err.message : 'Assistant request failed. Please retype and try again.';
-                addAssistantMessage(msg, 'assistant');
+                removeLastChatMessage(config.messagesId);
+                const msg = (err && err.message) ? err.message : 'Chat request failed. Please retype and try again.';
+                addChatMessage(config.messagesId, msg, 'assistant', config.botLabel || 'Assistant');
+                setChatUiMeta(config, {
+                    statusText: 'Response failed. Please retry.',
+                    detailText: 'Secure fallback mode is recommended until the service issue is resolved.',
+                    noticeText: msg,
+                    noticeClass: 'fallback',
+                    modeLabel: 'Secure Fallback',
+                    modeClass: 'fallback'
+                });
                 updateModuleInsight({ score: 45, status: 'WARNING', message: msg });
+            })
+            .finally(function () {
+                input.disabled = false;
+                input.focus();
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = oldBtnHtml || '<i class="fas fa-paper-plane"></i>';
+                }
             });
+    }
+
+    window.sendAssistantMessage = function sendAssistantMessage() {
+        sendChatMessage('assistant');
+    };
+
+    window.sendChatbotMessage = function sendChatbotMessage() {
+        sendChatMessage('chatbot');
+    };
+
+    window.clearAssistantChat = function clearAssistantChat() {
+        chatHistories.assistant = [];
+        var messages = byId('assistantMessages');
+        if (!messages) return;
+        var initialState = getAssistantInitialState();
+        messages.innerHTML = '' +
+            '<div class="message bot">' +
+            '  <div class="message-meta">' + safeText(initialState.welcomeLabel) + '</div>' +
+            '  <div class="message-content">' +
+            safeText(initialState.welcomeText) +
+            '  </div>' +
+            '</div>';
+        setChatUiMeta(getChatModuleConfig('assistant'), {
+            statusText: initialState.statusText,
+            detailText: initialState.detailText,
+            noticeText: initialState.noticeText,
+            noticeClass: initialState.noticeClass,
+            modelLabel: initialState.modelLabel,
+            modeLabel: initialState.modeLabel,
+            modeClass: initialState.modeClass
+        });
+        updateModuleInsight({
+            score: 5,
+            status: 'SAFE',
+            message: 'Chat history cleared. Start a new conversation.',
+            suggestions: ['Ask one focused question at a time.', 'Use real scenarios for better guidance.']
+        });
+    };
+
+    window.clearChatbotChat = function clearChatbotChat() {
+        chatHistories.chatbot = [];
+        var messages = byId('chatbotMessages');
+        if (!messages) return;
+        var initialState = getChatbotInitialState();
+        messages.innerHTML = '' +
+            '<div class="message bot">' +
+            '  <div class="message-meta">' + safeText(initialState.welcomeLabel) + '</div>' +
+            '  <div class="message-content">' +
+            safeText(initialState.welcomeText) +
+            '  </div>' +
+            '</div>';
+        setChatUiMeta(getChatModuleConfig('chatbot'), {
+            statusText: initialState.statusText,
+            detailText: initialState.detailText,
+            noticeText: initialState.noticeText,
+            noticeClass: initialState.noticeClass,
+            modelLabel: initialState.modelLabel,
+            modeLabel: initialState.modeLabel,
+            modeClass: initialState.modeClass
+        });
+        updateModuleInsight({
+            score: 5,
+            status: 'SAFE',
+            message: 'Chat history cleared. Start a new conversation.',
+            suggestions: ['Ask one focused question at a time.', 'Use real scenarios for better guidance.']
+        });
+    };
+
+    window.useChatbotPrompt = function useChatbotPrompt(promptText) {
+        var input = byId('chatInput');
+        if (!input) return;
+        input.value = String(promptText || '');
+        input.focus();
+    };
+
+    window.useAssistantPrompt = function useAssistantPrompt(promptText) {
+        var input = byId('assistantInput');
+        if (!input) return;
+        input.value = String(promptText || '');
+        input.focus();
     };
 
     window.simulateAttack = function simulateAttack(type) {
@@ -1604,6 +1929,85 @@
             });
     };
 
+    window.setDashboardChatPrompt = function setDashboardChatPrompt(prompt) {
+        var input = byId('dashboardChatInput');
+        if (!input) return;
+        input.value = String(prompt || '');
+        input.focus();
+    };
+
+    window.clearDashboardChatbot = function clearDashboardChatbot() {
+        var input = byId('dashboardChatInput');
+        var status = byId('dashboardChatStatus');
+        var response = byId('dashboardChatResponse');
+        if (input) input.value = '';
+        if (status) status.textContent = 'Waiting for your question.';
+        if (response) response.textContent = 'Ask Chatbot from here to get ChatGPT-style guidance.';
+        chatHistories.dashboard = [];
+    };
+
+    window.runDashboardChatbot = function runDashboardChatbot() {
+        var input = byId('dashboardChatInput');
+        var sendBtn = byId('dashboardChatSendBtn');
+        var status = byId('dashboardChatStatus');
+        var response = byId('dashboardChatResponse');
+        var message = input ? String(input.value || '').trim() : '';
+        if (!message) return showInvalidInput('Question is empty.');
+        if (message.length < 2) return showInvalidInput('Question is too short.');
+        if (message.length > 3000) return showInvalidInput('Question is too long. Maximum 3000 characters.');
+
+        var history = chatHistories.dashboard || [];
+        history.push({ role: 'user', content: message });
+        chatHistories.dashboard = history;
+
+        if (status) status.textContent = 'Chatbot is thinking...';
+        if (response) response.textContent = 'Generating response...';
+
+        var oldBtnHtml = sendBtn ? sendBtn.innerHTML : '';
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        }
+
+        apiFetchJson('/api/chat', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ message: message, history: history })
+        })
+            .then(function (data) {
+                var reply = String(data.reply || data.response || data.message || 'No response.').trim();
+                if (!reply) reply = 'No response.';
+                if (status) status.textContent = 'Response ready.';
+                if (response) response.textContent = reply;
+                history.push({ role: 'assistant', content: reply });
+                chatHistories.dashboard = history.slice(-30);
+                updateModuleInsight({
+                    score: 15,
+                    status: 'SAFE',
+                    message: 'Chatbot responded successfully.',
+                    output_lines: [
+                        'Module: Chatbot',
+                        'Status: Response generated',
+                        'Characters: ' + String(reply.length),
+                        'History window: ' + String(chatHistories.dashboard.length)
+                    ],
+                    suggestions: ['Ask focused questions for better quality responses.', 'Cross-check critical advice with live scans.']
+                });
+            })
+            .catch(function (err) {
+                var msg = (err && err.message) ? err.message : 'Chatbot request failed.';
+                if (status) status.textContent = 'Request failed.';
+                if (response) response.textContent = msg;
+                updateModuleInsight({ score: 45, status: 'WARNING', message: msg });
+            })
+            .finally(function () {
+                if (sendBtn) {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = oldBtnHtml || '<i class="fas fa-paper-plane"></i> Ask Chatbot';
+                }
+            });
+    };
+
     window.applyReportFilter = function applyReportFilter() {
         const filter = (byId('reportFilter') || {}).value || 'all';
         const keyword = (byId('reportSearch') || {}).value || '';
@@ -1810,10 +2214,19 @@
 
         const filterSelect = byId('analysisFilter');
         const searchInput = byId('analysisSearch');
+        const dashboardChatInput = byId('dashboardChatInput');
         if (filterSelect) filterSelect.addEventListener('change', window.refreshAnalysisDashboard);
         if (searchInput) {
             searchInput.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') window.refreshAnalysisDashboard();
+            });
+        }
+        if (dashboardChatInput) {
+            dashboardChatInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    if (typeof window.runDashboardChatbot === 'function') window.runDashboardChatbot();
+                }
             });
         }
     }
@@ -1982,7 +2395,11 @@
         initPwaInstall();
         initButtonClickFlash();
         initModuleSuggestions();
-        if (window.location.pathname.indexOf('/features/') === 0) {
+        if (
+            window.location.pathname.indexOf('/features/') === 0 &&
+            window.location.pathname.indexOf('/features/chatbot') !== 0 &&
+            window.location.pathname.indexOf('/features/assistant') !== 0
+        ) {
             updateModuleInsight({
                 score: 0,
                 status: 'SAFE',
@@ -1992,10 +2409,59 @@
         const assistantInput = byId('assistantInput');
         if (assistantInput) {
             assistantInput.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     window.sendAssistantMessage();
                 }
+            });
+        }
+        const assistantSendBtn = byId('assistantSendBtn');
+        if (assistantSendBtn && !assistantSendBtn.dataset.boundSend) {
+            assistantSendBtn.dataset.boundSend = '1';
+            assistantSendBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.sendAssistantMessage();
+            });
+        }
+        const chatInput = byId('chatInput');
+        if (chatInput) {
+            chatInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    window.sendChatbotMessage();
+                }
+            });
+        }
+        const chatbotSendBtn = byId('chatbotSendBtn');
+        if (chatbotSendBtn && !chatbotSendBtn.dataset.boundSend) {
+            chatbotSendBtn.dataset.boundSend = '1';
+            chatbotSendBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.sendChatbotMessage();
+            });
+        }
+        const chatbotComposerForm = byId('chatbotComposerForm');
+        if (chatbotComposerForm && !chatbotComposerForm.dataset.boundSubmit) {
+            chatbotComposerForm.dataset.boundSubmit = '1';
+            chatbotComposerForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                window.sendChatbotMessage();
+            });
+        }
+        const chatbotClearBtn = document.querySelector('.pro-chat-clear[onclick*="clearChatbotChat"]');
+        if (chatbotClearBtn && !chatbotClearBtn.dataset.boundClear) {
+            chatbotClearBtn.dataset.boundClear = '1';
+            chatbotClearBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.clearChatbotChat();
+            });
+        }
+        const assistantClearBtn = document.querySelector('.pro-chat-clear[onclick*="clearAssistantChat"]');
+        if (assistantClearBtn && !assistantClearBtn.dataset.boundClear) {
+            assistantClearBtn.dataset.boundClear = '1';
+            assistantClearBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.clearAssistantChat();
             });
         }
         const urlScanBtn = byId('urlScanBtn');

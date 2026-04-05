@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib import error as url_error
 from urllib import parse as url_parse
 from urllib import request as url_request
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 try:
@@ -36,10 +37,15 @@ try:
     import requests
 except Exception:
     requests = None
+try:
+    import wikipedia as wikipedia_lib
+except Exception:
+    wikipedia_lib = None
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / 'cybersecurity.db'
 CSV_PATH = BASE_DIR / 'dataset.csv'
+CHATBOT_DATA_PATH = BASE_DIR / 'data.json'
 if load_dotenv is not None:
     load_dotenv(BASE_DIR / '.env')
 AUTHOR_NAME = 'Al Momna Umar Daraz'
@@ -52,6 +58,11 @@ HIBP_BASE_URL = 'https://haveibeenpwned.com'
 HIBP_USER_AGENT = 'CyberShield-AI-Breach-Module'
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '').strip()
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-5.4')
+OPENAI_TIMEOUT_SECONDS = max(3.0, float(os.getenv('OPENAI_TIMEOUT_SECONDS', '8')))
+OPENAI_FAIL_CACHE_SECONDS = max(15, int(os.getenv('OPENAI_FAIL_CACHE_SECONDS', '180')))
+USE_OLLAMA_CHATBOT = os.getenv('USE_OLLAMA_CHATBOT', '0').strip() == '1'
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama3').strip() or 'llama3'
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/generate').strip() or 'http://localhost:11434/api/generate'
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '').strip()
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '').strip()
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', '').strip()
@@ -72,8 +83,14 @@ PK_ACCOUNT_TITLE = os.getenv('PK_ACCOUNT_TITLE', UBL_ACCOUNT_TITLE).strip()
 PK_ACCOUNT_NUMBER = os.getenv('PK_ACCOUNT_NUMBER', UBL_ACCOUNT_NUMBER).strip()
 PK_IBAN = os.getenv('PK_IBAN', UBL_IBAN).strip()
 BANK_TRANSFER_AUTO_APPROVE = os.getenv('BANK_TRANSFER_AUTO_APPROVE', '0').strip() == '1'
-OTP_DEBUG_MODE = os.getenv('OTP_DEBUG_MODE', '1').strip() == '1'
+ENABLE_SIMULATED_PAYMENTS = os.getenv('ENABLE_SIMULATED_PAYMENTS', '0').strip() == '1'
+OTP_DEBUG_MODE = os.getenv('OTP_DEBUG_MODE', '0').strip() == '1'
 ADS_ONLY_MONETIZATION = os.getenv('ADS_ONLY_MONETIZATION', '1').strip() == '1'
+TRUST_PROXY_HEADERS = os.getenv('TRUST_PROXY_HEADERS', '0').strip() == '1'
+SESSION_TTL_HOURS = max(1, int(os.getenv('SESSION_TTL_HOURS', '12')))
+MIN_PASSWORD_LENGTH = max(10, int(os.getenv('MIN_PASSWORD_LENGTH', '12')))
+UPLOAD_BYTES_LIMIT = 2 * 1024 * 1024
+ENFORCE_HTTPS = os.getenv('ENFORCE_HTTPS', '0') == '1'
 DANGEROUS_PORTS = {
     21: 'FTP',
     22: 'SSH',
@@ -232,14 +249,143 @@ CREDIT_PACKS = {
     'business_2000': {'title': 'Business 2000 Credits', 'credits': 2000, 'price_usd': 59},
 }
 ASSISTANT_SYSTEM_PROMPT = (
-    'You are a cybersecurity assistant for a practical security training web app. '
-    'Give concise, actionable, and safe guidance. '
-    'Do not provide instructions for illegal hacking or malware.'
+    'You are the in-app ChatGPT-style cybersecurity assistant for a practical security training web app. '
+    'Answer like a helpful, clear, professional assistant. '
+    'Start with the direct answer, then give practical next steps. '
+    'Use short sections or bullets when they improve readability, but do not sound robotic. '
+    'Adapt to the user question instead of giving generic filler. '
+    'If the user asks for help with security, defense, hardening, incident response, phishing, passwords, SOC, or safe configuration, '
+    'provide actionable defensive guidance. '
+    'Do not provide instructions for illegal hacking, malware, credential theft, or evasion.'
 )
+FIXED_CHATBOT_RESPONSES = [
+    {
+        'question': 'what is phishing',
+        'keywords': ['phishing', 'fake email', 'suspicious email', 'credential theft'],
+        'answer': 'Phishing is a social-engineering attack where an attacker tricks someone into revealing passwords, OTP codes, banking details, or other sensitive information through fake messages, login pages, or calls.',
+    },
+    {
+        'question': 'what is malware',
+        'keywords': ['malware', 'virus', 'trojan', 'spyware', 'worm'],
+        'answer': 'Malware is malicious software designed to damage systems, steal data, spy on users, or give attackers unauthorized access. Common types include viruses, worms, trojans, spyware, and ransomware.',
+    },
+    {
+        'question': 'strong password',
+        'keywords': ['strong password', 'secure password', 'password create', 'password policy'],
+        'answer': 'A strong password should be long, unique, and hard to guess. Use at least 12 to 16 characters, mix letters, numbers, and symbols, avoid personal details, and do not reuse it across sites.',
+    },
+    {
+        'question': 'what is port scanning',
+        'keywords': ['port scanning', 'open ports', 'scan ports', 'nmap'],
+        'answer': 'Port scanning is the process of checking which network ports are open on a host. Attackers use it to discover exposed services, while defenders use it to identify unnecessary or risky internet-facing services.',
+    },
+    {
+        'question': 'what is a firewall',
+        'keywords': ['firewall', 'network firewall', 'allow ports', 'block traffic'],
+        'answer': 'A firewall filters inbound and outbound network traffic based on rules. It helps block unauthorized connections, restrict exposed services, and reduce the attack surface of a device or network.',
+    },
+    {
+        'question': 'what is a data breach',
+        'keywords': ['data breach', 'data leak', 'stolen data', 'breach disclosure'],
+        'answer': 'A data breach happens when sensitive information is accessed, exposed, stolen, or shared without authorization. This can include passwords, personal data, business records, or payment information.',
+    },
+    {
+        'question': 'what is ransomware',
+        'keywords': ['ransomware', 'files encrypted', 'ransom attack', 'crypto malware'],
+        'answer': 'Ransomware is malware that encrypts files or locks systems and demands payment for restoration. Good backups, patching, endpoint protection, and phishing resistance are key defenses.',
+    },
+    {
+        'question': 'what is social engineering',
+        'keywords': ['social engineering', 'human hacking', 'manipulation attack', 'pretexting'],
+        'answer': 'Social engineering is the use of deception or manipulation to convince people to reveal secrets, transfer money, install malware, or bypass security controls.',
+    },
+    {
+        'question': 'what is two factor authentication',
+        'keywords': ['2fa', 'mfa', 'two factor', 'multi factor', 'otp'],
+        'answer': 'Two-factor or multi-factor authentication adds an extra verification step beyond the password, such as an authenticator app, hardware key, or biometric check. It greatly reduces account takeover risk.',
+    },
+    {
+        'question': 'what is vpn',
+        'keywords': ['vpn', 'virtual private network', 'secure tunnel'],
+        'answer': 'A VPN encrypts traffic between your device and a trusted VPN server. It can reduce exposure on untrusted networks, but it is not a substitute for patching, MFA, and secure account practices.',
+    },
+    {
+        'question': 'what is sql injection',
+        'keywords': ['sql injection', 'sqli', 'database injection'],
+        'answer': 'SQL injection is a vulnerability where unsafe user input is interpreted as part of a database query. It can lead to unauthorized data access, modification, or deletion if queries are not parameterized.',
+    },
+    {
+        'question': 'what is xss',
+        'keywords': ['xss', 'cross site scripting', 'script injection'],
+        'answer': 'Cross-site scripting, or XSS, happens when untrusted input is rendered as executable script in a browser. It can steal session data, modify page content, or perform actions as the victim user.',
+    },
+    {
+        'question': 'what is ddos',
+        'keywords': ['ddos', 'denial of service', 'traffic flood', 'bot traffic'],
+        'answer': 'A DDoS attack overwhelms a service with large volumes of traffic or requests so legitimate users cannot access it. Common defenses include rate limiting, CDN protection, autoscaling, and WAF rules.',
+    },
+    {
+        'question': 'what is encryption',
+        'keywords': ['encryption', 'encrypt data', 'cipher text'],
+        'answer': 'Encryption converts readable data into unreadable ciphertext using a key. It protects sensitive information in transit and at rest so unauthorized parties cannot easily read it.',
+    },
+    {
+        'question': 'what is hashing',
+        'keywords': ['hashing', 'hash function', 'sha256', 'password hash'],
+        'answer': 'Hashing transforms input data into a fixed-length value. It is commonly used for integrity checks and secure password storage, but hashing is one-way and is not the same as encryption.',
+    },
+    {
+        'question': 'what is brute force',
+        'keywords': ['brute force', 'password guessing', 'credential attack'],
+        'answer': 'A brute-force attack tries many passwords or keys until one works. Strong unique passwords, account lockouts, MFA, and rate limiting help defend against this type of attack.',
+    },
+    {
+        'question': 'what is patch management',
+        'keywords': ['patch management', 'security updates', 'update software', 'patching'],
+        'answer': 'Patch management is the process of identifying, testing, and applying software updates to fix security vulnerabilities and bugs. Delayed patching leaves systems exposed to known exploits.',
+    },
+    {
+        'question': 'what is least privilege',
+        'keywords': ['least privilege', 'minimum access', 'limited permissions'],
+        'answer': 'Least privilege means giving users, apps, and services only the permissions they truly need. This limits damage if an account or system is compromised.',
+    },
+    {
+        'question': 'what is incident response',
+        'keywords': ['incident response', 'security incident', 'respond to attack'],
+        'answer': 'Incident response is the structured process of preparing for, detecting, containing, investigating, recovering from, and documenting cybersecurity incidents.',
+    },
+    {
+        'question': 'what is a botnet',
+        'keywords': ['botnet', 'infected devices', 'zombie network'],
+        'answer': 'A botnet is a group of compromised devices controlled by an attacker. Botnets are often used for DDoS attacks, spam campaigns, malware delivery, or credential attacks.',
+    },
+    {
+        'question': 'what is zero day',
+        'keywords': ['zero day', '0day', 'unknown vulnerability'],
+        'answer': 'A zero-day vulnerability is a security flaw that is unknown to the vendor or has no patch available yet. It is especially dangerous because defenders have limited time to react.',
+    },
+    {
+        'question': 'what is https',
+        'keywords': ['https', 'ssl', 'tls', 'secure website'],
+        'answer': 'HTTPS protects web traffic with TLS encryption so attackers cannot easily read or modify the connection in transit. It improves trust, but a malicious website can still use HTTPS.',
+    },
+    {
+        'question': 'what is backup',
+        'keywords': ['backup', 'restore data', 'recovery copy'],
+        'answer': 'A backup is a separate copy of important data used for recovery after accidental deletion, hardware failure, ransomware, or other incidents. Good backups should be tested and isolated.',
+    },
+    {
+        'question': 'what is ids ips',
+        'keywords': ['ids', 'ips', 'intrusion detection', 'intrusion prevention'],
+        'answer': 'An IDS monitors traffic or system events and alerts on suspicious activity, while an IPS can actively block or stop malicious traffic based on detected patterns or rules.',
+    },
+]
 UPLOAD_FOLDER = BASE_DIR / 'static' / 'uploads'
 ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 
 app = Flask(__name__, template_folder='static/templates', static_folder='static')
+if TRUST_PROXY_HEADERS:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -248,10 +394,12 @@ app.config.update(
         'SESSION_COOKIE_SECURE',
         '1' if os.getenv('ENFORCE_HTTPS', '0') == '1' else '0',
     ) == '1',
-    MAX_CONTENT_LENGTH=2 * 1024 * 1024,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_TTL_HOURS),
+    PREFERRED_URL_SCHEME='https' if ENFORCE_HTTPS else 'http',
+    MAX_CONTENT_LENGTH=UPLOAD_BYTES_LIMIT,
+    MAX_FORM_MEMORY_SIZE=UPLOAD_BYTES_LIMIT,
 )
 
-ENFORCE_HTTPS = os.getenv('ENFORCE_HTTPS', '0') == '1'
 API_RATE_LIMIT = int(os.getenv('API_RATE_LIMIT', '120'))
 API_RATE_WINDOW = int(os.getenv('API_RATE_WINDOW', '60'))
 AUTH_RATE_LIMIT = int(os.getenv('AUTH_RATE_LIMIT', '20'))
@@ -262,6 +410,8 @@ DEFAULT_CURRENCY = 'usd'
 HIBP_BREACHES_CACHE_SECONDS = 6 * 60 * 60
 HIBP_BREACHES_FAIL_CACHE_SECONDS = 5 * 60
 _hibp_breaches_cache = {'fetched_at': 0, 'data': [], 'failed_at': 0, 'fail_message': ''}
+_assistant_live_fail_cache = {'failed_at': 0, 'message': ''}
+_chatbot_kb_cache = {'loaded_at': 0, 'mtime': 0, 'data': []}
 
 
 def build_static_version():
@@ -269,6 +419,7 @@ def build_static_version():
         BASE_DIR / 'static' / 'script.js',
         BASE_DIR / 'static' / 'style.css',
         BASE_DIR / 'static' / 'sw.js',
+        CHATBOT_DATA_PATH,
     ]
     latest = 0
     for p in files:
@@ -277,6 +428,40 @@ def build_static_version():
         except Exception:
             continue
     return str(latest or int(time.time()))
+
+
+def load_chatbot_knowledge_base():
+    try:
+        mtime = int(CHATBOT_DATA_PATH.stat().st_mtime)
+    except Exception:
+        return []
+
+    if _chatbot_kb_cache['data'] and _chatbot_kb_cache['mtime'] == mtime:
+        return list(_chatbot_kb_cache['data'])
+
+    try:
+        with CHATBOT_DATA_PATH.open('r', encoding='utf-8') as fh:
+            payload = json.load(fh)
+    except Exception:
+        return []
+
+    entries = []
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            keywords = item.get('keywords') or []
+            answer = str(item.get('answer') or '').strip()
+            if not answer or not isinstance(keywords, list):
+                continue
+            cleaned_keywords = [str(k or '').strip().lower() for k in keywords if str(k or '').strip()]
+            if cleaned_keywords:
+                entries.append({'keywords': cleaned_keywords, 'answer': answer})
+
+    _chatbot_kb_cache['mtime'] = mtime
+    _chatbot_kb_cache['loaded_at'] = int(time.time())
+    _chatbot_kb_cache['data'] = entries
+    return list(entries)
 
 
 STATIC_VERSION = build_static_version()
@@ -298,17 +483,126 @@ def get_db_connection():
 
 
 def get_client_ip():
-    forwarded = (request.headers.get('X-Forwarded-For') or '').strip()
-    if forwarded:
-        return forwarded.split(',')[0].strip()
     return request.remote_addr or 'unknown'
+
+
+def is_disallowed_ip_address(ip_obj):
+    return (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_multicast
+        or ip_obj.is_reserved
+        or ip_obj.is_unspecified
+    )
+
+
+def is_safe_relative_url(target):
+    value = str(target or '').strip()
+    if not value or not value.startswith('/') or value.startswith('//'):
+        return False
+    parsed = url_parse.urlsplit(value)
+    return not parsed.scheme and not parsed.netloc
+
+
+def get_safe_redirect_target(target, fallback_endpoint='analysis'):
+    value = str(target or '').strip()
+    if is_safe_relative_url(value):
+        return value
+    return url_for(fallback_endpoint)
+
+
+def rotate_csrf_token():
+    token = secrets.token_urlsafe(32)
+    session['_csrf_token'] = token
+    return token
+
+
+def start_user_session(user):
+    session.clear()
+    session.permanent = True
+    rotate_csrf_token()
+    session['user_id'] = int(user['id'])
+    session['user_name'] = str(user['name'] or '')
+    session['user_email'] = str(user['email'] or '')
+    session['user_phone'] = str(user['phone'] or '')
+    session['user_profile_image'] = str(user['profile_image'] or '')
+
+
+def password_policy_error(password):
+    value = str(password or '')
+    if len(value) < MIN_PASSWORD_LENGTH:
+        return f'Password must be at least {MIN_PASSWORD_LENGTH} characters.'
+    if re.search(r'[a-z]', value) is None:
+        return 'Password must include at least one lowercase letter.'
+    if re.search(r'[A-Z]', value) is None:
+        return 'Password must include at least one uppercase letter.'
+    if re.search(r'\d', value) is None:
+        return 'Password must include at least one number.'
+    if re.search(r'[^A-Za-z0-9]', value) is None:
+        return 'Password must include at least one symbol.'
+    return ''
+
+
+def is_strong_password(password):
+    return not password_policy_error(password)
+
+
+def sniff_image_extension(data):
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'png'
+    if data[:3] == b'\xff\xd8\xff':
+        return 'jpg'
+    if data.startswith(b'RIFF') and data[8:12] == b'WEBP':
+        return 'webp'
+    return ''
+
+
+def read_image_upload(file_storage, required=False):
+    if not file_storage or not file_storage.filename:
+        if required:
+            return {'ok': False, 'message': 'Image file is required.'}
+        return {'ok': True, 'empty': True}
+
+    original = secure_filename(file_storage.filename or '')
+    if not original or not is_allowed_image(original):
+        return {'ok': False, 'message': 'Invalid image type. Use png, jpg, jpeg, or webp.'}
+
+    image_bytes = file_storage.read(UPLOAD_BYTES_LIMIT + 1)
+    file_storage.stream.seek(0)
+    if not image_bytes:
+        return {'ok': False, 'message': 'Uploaded file is empty.'}
+    if len(image_bytes) > UPLOAD_BYTES_LIMIT:
+        return {'ok': False, 'message': 'Image is too large. Maximum size is 2 MB.'}
+
+    detected_ext = sniff_image_extension(image_bytes)
+    expected_ext = original.rsplit('.', 1)[-1].lower()
+    if expected_ext == 'jpeg':
+        expected_ext = 'jpg'
+    if not detected_ext:
+        return {'ok': False, 'message': 'Uploaded file does not appear to be a valid PNG, JPEG, or WebP image.'}
+    if detected_ext != expected_ext:
+        return {'ok': False, 'message': 'Image content does not match the file extension.'}
+
+    mime_map = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'webp': 'image/webp',
+    }
+    return {
+        'ok': True,
+        'empty': False,
+        'filename': original,
+        'ext': detected_ext,
+        'data': image_bytes,
+        'mime_type': mime_map.get(detected_ext, 'application/octet-stream'),
+    }
 
 
 def get_csrf_token():
     token = session.get('_csrf_token')
     if not token:
-        token = secrets.token_urlsafe(32)
-        session['_csrf_token'] = token
+        token = rotate_csrf_token()
     return token
 
 
@@ -493,17 +787,20 @@ def is_allowed_image(filename):
     return ext in ALLOWED_IMAGE_EXTENSIONS
 
 
-def save_profile_image(file_storage, user_id):
-    if not file_storage or not file_storage.filename:
+def save_profile_image(file_storage, user_id, prepared_image=None):
+    image_info = prepared_image or read_image_upload(file_storage)
+    if not image_info.get('ok'):
+        return None, image_info.get('message', 'Invalid image upload.')
+    if image_info.get('empty'):
         return None, None
-    if not is_allowed_image(file_storage.filename):
-        return None, 'Invalid image type. Use png, jpg, jpeg, or webp.'
 
-    original = secure_filename(file_storage.filename)
-    ext = original.rsplit('.', 1)[-1].lower()
+    ext = image_info['ext']
     name = f'profile_{int(user_id)}_{secrets.token_hex(6)}.{ext}'
     path = UPLOAD_FOLDER / name
-    file_storage.save(path)
+    try:
+        path.write_bytes(image_info['data'])
+    except OSError:
+        return None, 'Unable to save uploaded image right now. Please retry.'
     return name, None
 
 
@@ -735,6 +1032,12 @@ def ensure_user_wallet(conn, user_id):
 
 def create_default_user(conn):
     if not DEFAULT_ADMIN_PASSWORD:
+        return None
+    if not is_strong_password(DEFAULT_ADMIN_PASSWORD):
+        print(
+            f'Warning: DEFAULT_ADMIN_PASSWORD ignored because it does not meet the minimum password policy '
+            f'({MIN_PASSWORD_LENGTH}+ chars with uppercase, lowercase, number, and symbol).'
+        )
         return None
 
     row = conn.execute('SELECT id FROM users WHERE email = ?', (DEFAULT_ADMIN_EMAIL,)).fetchone()
@@ -1436,8 +1739,11 @@ def normalize_url_input(raw_url):
     if (not is_ip_host) and ('.' not in host):
         return {'ok': False, 'message': 'Invalid URL/domain format.', 'url': '', 'domain': ''}
 
-    if host in {'localhost', '127.0.0.1'}:
-        return {'ok': False, 'message': 'Localhost URLs are not allowed for scan.', 'url': '', 'domain': ''}
+    if is_ip_host:
+        if is_disallowed_ip_address(ipaddress.ip_address(host)):
+            return {'ok': False, 'message': 'Private/internal IP addresses are not allowed for scan.', 'url': '', 'domain': ''}
+    elif host in {'localhost', 'localhost.localdomain'} or not re.match(r'^[a-z0-9.-]+$', host):
+        return {'ok': False, 'message': 'Invalid or local hostname for scan.', 'url': '', 'domain': ''}
 
     return {'ok': True, 'url': value, 'domain': host, 'scheme': parsed.scheme.lower()}
 
@@ -1461,6 +1767,14 @@ def normalize_host_input(raw_host):
 
     if not host:
         return {'ok': False, 'host': '', 'message': 'Invalid host format.'}
+
+    try:
+        ip_obj = ipaddress.ip_address(host)
+        if is_disallowed_ip_address(ip_obj):
+            return {'ok': False, 'host': '', 'message': 'Private/internal IP addresses are blocked for safety.'}
+    except Exception:
+        if host in {'localhost', 'localhost.localdomain'} or not re.match(r'^[a-z0-9.-]+$', host):
+            return {'ok': False, 'host': '', 'message': 'Invalid or local hostname.'}
 
     return {'ok': True, 'host': host, 'message': 'ok'}
 
@@ -1620,14 +1934,7 @@ def validate_scan_target(host):
 
     for ip_text in ips:
         ip_obj = ipaddress.ip_address(ip_text)
-        if (
-            ip_obj.is_private
-            or ip_obj.is_loopback
-            or ip_obj.is_link_local
-            or ip_obj.is_multicast
-            or ip_obj.is_reserved
-            or ip_obj.is_unspecified
-        ):
+        if is_disallowed_ip_address(ip_obj):
             return False, 'Target resolves to private/internal address. Scan blocked for safety.', ''
 
     return True, '', ips[0]
@@ -1769,73 +2076,409 @@ def evaluate_linux_command(command_text):
     }
 
 
-def build_local_assistant_fallback(user_message):
-    text = str(user_message or '').strip().lower()
-    if 'password' in text:
-        reply = 'Use at least 12 chars with uppercase, lowercase, number, and symbol. Avoid reused passwords.'
-    elif 'url' in text or 'link' in text:
-        reply = 'Verify domain spelling, HTTPS certificate, and avoid shortened unknown links.'
-    elif 'port' in text:
-        reply = 'Close unused ports, restrict admin ports with firewall, and monitor repeated scan attempts.'
-    elif 'linux' in text or 'command' in text:
-        reply = 'Test commands in sandbox first and avoid destructive flags like rm -rf on unknown paths.'
+def format_chat_style_reply(intro, bullet_points=None, closing=''):
+    parts = [str(intro or '').strip()]
+    bullets = [str(item).strip() for item in (bullet_points or []) if str(item or '').strip()]
+    if bullets:
+        parts.append('\n'.join(f'- {item}' for item in bullets))
+    if str(closing or '').strip():
+        parts.append(str(closing).strip())
+    return '\n\n'.join(part for part in parts if part)
+
+
+def find_fixed_chatbot_answer(user_message):
+    lowered = re.sub(r'\s+', ' ', str(user_message or '').strip().lower())
+    if not lowered:
+        return None
+
+    knowledge_base = load_chatbot_knowledge_base()
+    if not knowledge_base:
+        return None
+
+    best_entry = None
+    best_score = 0
+    for entry in knowledge_base:
+        score = 0
+        for keyword in entry.get('keywords', []):
+            token = str(keyword or '').strip().lower()
+            if not token:
+                continue
+            if ' ' in token:
+                if token in lowered:
+                    score += 3
+                continue
+
+            pattern = r'(?<![a-z0-9])' + re.escape(token) + r'(?![a-z0-9])'
+            if re.search(pattern, lowered):
+                score += 2
+
+        if score > best_score:
+            best_score = score
+            best_entry = entry
+
+    if not best_entry or best_score <= 0:
+        return None
+
+    return {
+        'ok': True,
+        'message': 'knowledge_base',
+        'reply': str(best_entry.get('answer') or '').strip(),
+        'matched_keywords': list(best_entry.get('keywords') or []),
+    }
+
+
+def build_contextual_generic_reply(user_message):
+    text = str(user_message or '').strip()
+    lowered = text.lower()
+    words = set(re.findall(r'[a-z0-9]+', lowered))
+
+    intro = f'I understood your question as: "{text[:140]}". Here is practical cybersecurity guidance based on that topic.'
+    bullets = []
+    closing = 'If you want, ask a more specific follow-up and I will narrow this down further.'
+
+    if words & {'account', 'login', 'signin', 'gmail', 'email', 'mfa', '2fa', 'otp'}:
+        bullets = [
+            'Protect the account first with a strong unique password and MFA.',
+            'Review recent sign-in activity, recovery settings, and connected apps.',
+            'Remove suspicious forwarding rules, filters, or unknown sessions.',
+            'Treat unexpected login alerts, OTP prompts, or password reset emails as potential abuse.',
+        ]
+    elif words & {'server', 'linux', 'ubuntu', 'ssh', 'hardening', 'vps'}:
+        bullets = [
+            'Patch the system and remove unused packages or services.',
+            'Restrict SSH access, prefer keys over passwords, and limit sudo rights.',
+            'Allow only required ports through the firewall.',
+            'Enable logging, backups, and regular configuration review.',
+        ]
+    elif words & {'website', 'web', 'app', 'sql', 'xss', 'csrf', 'api'}:
+        bullets = [
+            'Validate and sanitize user input on both frontend and backend.',
+            'Use parameterized queries and safe output encoding.',
+            'Protect sessions with CSRF defenses, secure cookies, and least privilege.',
+            'Log security-relevant actions and test the app for common web vulnerabilities.',
+        ]
+    elif words & {'network', 'port', 'firewall', 'router', 'traffic', 'scan'}:
+        bullets = [
+            'Close unused ports and document every internet-facing service.',
+            'Restrict administrative access by IP where possible.',
+            'Monitor unusual inbound scans and outbound traffic patterns.',
+            'Keep exposed services patched and behind filtering controls.',
+        ]
+    elif words & {'breach', 'incident', 'compromise', 'hacked', 'attack', 'malware', 'ransomware'}:
+        bullets = [
+            'Start with containment so the issue cannot spread further.',
+            'Preserve evidence such as timestamps, alerts, screenshots, and affected hosts.',
+            'Reset exposed credentials and verify privileged access paths.',
+            'Document impact, recovery actions, and lessons learned.',
+        ]
+    elif words & {'password', 'authentication', 'auth', 'credential'}:
+        bullets = [
+            'Use long unique passwords and store them in a password manager.',
+            'Enable MFA on important systems so a stolen password alone is not enough.',
+            'Block password reuse and review failed-login patterns.',
+            'Protect reset and recovery flows as carefully as the login flow itself.',
+        ]
+    elif words & {'data', 'privacy', 'backup', 'encryption', 'hashing', 'files'}:
+        bullets = [
+            'Classify sensitive data so protections match business impact.',
+            'Encrypt data in transit and at rest where appropriate.',
+            'Use tested backups and keep at least one recovery copy isolated.',
+            'Limit who can access sensitive data and monitor export activity.',
+        ]
     else:
-        reply = (
-            'Assistant is in local fallback mode. Configure OPENAI_API_KEY for advanced responses. '
-            'I can still guide you on secure setup and module usage.'
+        bullets = [
+            'Identify what asset or system is involved and what risk you are trying to reduce.',
+            'Apply basic controls first: patching, MFA, least privilege, logging, and backups.',
+            'Check whether the issue is about account security, network exposure, web security, or incident response.',
+            'Break the problem into prevention, detection, and recovery steps.',
+        ]
+
+    return format_chat_style_reply(intro, bullets, closing)
+
+
+def fetch_wikipedia_summary(query_text):
+    text = str(query_text or '').strip()
+    if not text or wikipedia_lib is None:
+        return None
+
+    cleaned = re.sub(r'[^a-z0-9\s-]+', ' ', text.lower())
+    cleaned = re.sub(r'^(what is|what are|tell me about|explain|define|how does|how do|what does)\s+', '', cleaned).strip()
+    query_options = []
+    for candidate in [text, cleaned.title() if cleaned else '', cleaned]:
+        value = str(candidate or '').strip()
+        if value and value not in query_options:
+            query_options.append(value)
+
+    wikipedia_lib.set_lang('en')
+    for candidate in query_options:
+        try:
+            summary = wikipedia_lib.summary(candidate, sentences=3, auto_suggest=True)
+            summary_text = str(summary or '').strip()
+            if not summary_text:
+                continue
+            return {
+                'ok': True,
+                'message': 'wikipedia',
+                'reply': "Sorry, I couldn't find an exact answer, but here's something helpful:\n\n" + summary_text,
+                'notice': 'Answer source: Wikipedia summary.',
+            }
+        except wikipedia_lib.exceptions.DisambiguationError as exc:
+            options = [str(opt).strip() for opt in (getattr(exc, 'options', []) or []) if str(opt).strip()][:3]
+            if not options:
+                continue
+            return {
+                'ok': True,
+                'message': 'wikipedia',
+                'reply': format_chat_style_reply(
+                    "Sorry, I couldn't find an exact answer, but here's something helpful:",
+                    [f'Wikipedia found multiple meanings for "{candidate}".', 'Try one of these more specific topics: ' + ', '.join(options)],
+                    'Ask again with one of the specific topics and I will narrow it down.'
+                ),
+                'notice': 'Wikipedia returned multiple possible topics.',
+            }
+        except Exception:
+            continue
+    return None
+
+
+def run_ollama_chat_reply(history, user_message):
+    if not USE_OLLAMA_CHATBOT or requests is None:
+        return None
+
+    try:
+        history_lines = []
+        for item in sanitize_chat_history(history, max_items=6, max_chars=300):
+            role = 'User' if item.get('role') == 'user' else 'Assistant'
+            history_lines.append(f'{role}: {item.get("content")}')
+        prompt = (
+            'You are a beginner-friendly cybersecurity assistant. '
+            'Give practical, defensive, safe answers only.\n\n'
+            + ('\n'.join(history_lines) + '\n' if history_lines else '')
+            + f'User: {str(user_message or "").strip()}\nAssistant:'
         )
+        resp = requests.post(
+            OLLAMA_URL,
+            json={
+                'model': OLLAMA_MODEL,
+                'prompt': prompt,
+                'stream': False,
+            },
+            timeout=25,
+        )
+        resp.raise_for_status()
+        payload = resp.json() if hasattr(resp, 'json') else {}
+        answer = str((payload or {}).get('response') or '').strip()
+        if not answer:
+            return None
+        return {
+            'ok': True,
+            'message': 'ollama',
+            'reply': answer,
+            'notice': f'Answer source: local Ollama model ({OLLAMA_MODEL}).',
+        }
+    except Exception:
+        return None
+
+
+def build_local_assistant_fallback(user_message):
+    fixed_match = find_fixed_chatbot_answer(user_message)
+    if fixed_match:
+        return fixed_match
+
+    text = str(user_message or '').strip()
+    lowered = text.lower()
+
+    if any(term in lowered for term in {'gmail', 'phishing', 'fake login', 'suspicious email'}):
+        reply = format_chat_style_reply(
+            'To secure Gmail from phishing, focus on account hardening first and then tighten your email habits.',
+            [
+                'Enable 2-Step Verification and keep your recovery phone/email updated.',
+                'Use Gmail Security Checkup and review recent login activity for unknown devices.',
+                'Do not sign in through links sent in email or chat; open Gmail directly yourself.',
+                'Check the full sender address, not just the display name.',
+                'Remove suspicious forwarding rules, filters, or third-party app access.',
+            ],
+            'If you already clicked a suspicious link, change the password immediately, sign out other sessions, and review recovery settings.'
+        )
+    elif any(term in lowered for term in {'incident response', 'suspicious login', 'account compromised', 'hacked account'}):
+        reply = format_chat_style_reply(
+            'Start with containment so the attacker loses access as quickly as possible.',
+            [
+                'Change the password and force sign-out from other active sessions.',
+                'Enable MFA immediately if it is not already enabled.',
+                'Review recent login history, connected devices, and third-party app access.',
+                'Check recovery email, phone number, inbox rules, and forwarding settings.',
+                'Preserve evidence such as timestamps, screenshots, alert emails, and suspicious IPs.',
+            ],
+            'After containment, assess impact, reset any reused passwords, and document the incident timeline.'
+        )
+    elif any(term in lowered for term in {'soc checklist', 'security operations center', 'soc'}):
+        reply = format_chat_style_reply(
+            'A small-company SOC checklist should cover visibility, alerting, ownership, and response.',
+            [
+                'Inventory critical assets, users, servers, endpoints, and internet-facing apps.',
+                'Centralize logs from authentication, endpoints, firewall, and cloud services.',
+                'Define alert severity levels and clear escalation owners.',
+                'Monitor failed logins, suspicious sign-ins, malware alerts, and unusual outbound traffic.',
+                'Maintain an incident response playbook for phishing, compromised account, malware, and data exposure.',
+                'Review backups, patching status, and privileged account activity regularly.',
+            ],
+            'If you want, I can also turn this into a 1-page SOC checklist for your project or company.'
+        )
+    elif 'password' in lowered:
+        reply = format_chat_style_reply(
+            'A strong password policy should reduce reuse and make credential attacks harder.',
+            [
+                'Use at least 12 characters with uppercase, lowercase, numbers, and symbols.',
+                'Do not reuse passwords across websites or company systems.',
+                'Use a password manager to generate and store unique passwords.',
+                'Enable MFA for important accounts so password theft alone is not enough.',
+            ],
+            'If you want, I can also suggest a good password policy for this app specifically.'
+        )
+    elif any(term in lowered for term in {'url', 'link', 'domain'}):
+        reply = format_chat_style_reply(
+            'When checking a suspicious URL, verify trust before you click or sign in anywhere.',
+            [
+                'Check the exact domain spelling and watch for lookalike characters or extra subdomains.',
+                'Prefer HTTPS, but remember HTTPS alone does not guarantee safety.',
+                'Be careful with shortened links that hide the final destination.',
+                'Never enter credentials after opening a suspicious link from email, SMS, or chat.',
+            ],
+            'If you paste the exact URL, I can help you assess what looks suspicious about it.'
+        )
+    elif any(term in lowered for term in {'linux', 'server harden', 'hardening', 'ubuntu', 'ssh'}):
+        reply = format_chat_style_reply(
+            'For Linux hardening, reduce attack surface first and then improve monitoring.',
+            [
+                'Keep the OS and packages updated.',
+                'Disable password SSH login where possible and use key-based auth.',
+                'Allow only required ports in the firewall.',
+                'Remove unused services and packages.',
+                'Use least-privileged accounts and limit sudo access.',
+                'Enable logging, audit review, and regular backups.',
+            ],
+            'If you want, I can give you a Linux hardening checklist specifically for Ubuntu or for a cloud VPS.'
+        )
+    elif any(term in lowered for term in {'port', 'firewall', 'open port'}):
+        reply = format_chat_style_reply(
+            'Open ports should be treated as exposed services, so only keep what is truly needed.',
+            [
+                'Close unused ports and remove services you do not need.',
+                'Restrict admin ports like SSH or RDP to trusted IP addresses.',
+                'Put public apps behind a firewall, reverse proxy, or WAF where possible.',
+                'Patch the software listening on exposed ports.',
+                'Monitor repeated scans or connection attempts in logs.',
+            ]
+        )
+    elif any(term in lowered for term in {'malware', 'virus', 'trojan', 'ransomware'}):
+        reply = format_chat_style_reply(
+            'If malware is suspected, containment matters more than normal productivity in the first few minutes.',
+            [
+                'Isolate the affected device from the network.',
+                'Do not keep logging into sensitive accounts from that device.',
+                'Scan with trusted security tools and collect indicators of compromise.',
+                'Rotate important passwords from a clean device.',
+                'Restore only from known-good backups if recovery is needed.',
+            ]
+        )
+    else:
+        reply = build_contextual_generic_reply(user_message)
+
     return {'ok': True, 'message': 'fallback_mode', 'reply': reply}
 
 
-def generate_assistant_reply(history, user_message):
-    if not OPENAI_API_KEY:
-        return build_local_assistant_fallback(user_message)
-    if OpenAI is None:
-        return build_local_assistant_fallback(user_message)
+def generate_free_chatbot_reply(history, user_message):
+    fixed_match = find_fixed_chatbot_answer(user_message)
+    if fixed_match:
+        fixed_match['notice'] = 'Answer source: local cybersecurity knowledge base.'
+        return fixed_match
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    wiki_match = fetch_wikipedia_summary(user_message)
+    if wiki_match:
+        return wiki_match
+
+    ollama_match = run_ollama_chat_reply(history, user_message)
+    if ollama_match:
+        return ollama_match
+
+    fallback = build_local_assistant_fallback(user_message)
+    if fallback.get('message') == 'knowledge_base':
+        fallback['notice'] = 'Answer source: local cybersecurity knowledge base.'
+        return fallback
+
+    fallback['message'] = 'fallback'
+    fallback['notice'] = ''
+    return fallback
+
+
+def build_assistant_service_notice(error_text):
+    message = str(error_text or '').strip().lower()
+    if 'insufficient_quota' in message or 'quota' in message or 'rate limit' in message:
+        return 'Live AI temporarily unavailable: OpenAI quota exceeded. Update billing/quota in OpenAI dashboard.'
+    if 'invalid_api_key' in message or 'incorrect api key' in message or 'authentication' in message:
+        return 'Live AI temporarily unavailable: OpenAI API key is invalid. Update OPENAI_API_KEY and restart server.'
+    if 'model_not_found' in message or 'does not exist' in message:
+        return 'Live AI temporarily unavailable: configured model is not available for this API key.'
+    if 'connection error' in message or 'timed out' in message:
+        return 'Live AI temporarily unavailable: network/connectivity issue while reaching OpenAI.'
+    return 'Live AI temporarily unavailable right now. Showing local guidance mode.'
+
+
+def get_chat_runtime_status():
+    kb_entries = len(load_chatbot_knowledge_base())
+    if USE_OLLAMA_CHATBOT:
+        detail = f'Local knowledge base ({kb_entries} entries), Wikipedia, and Ollama ({OLLAMA_MODEL}) are enabled.'
+    else:
+        detail = f'Local knowledge base ({kb_entries} entries) and Wikipedia are enabled. Ollama is optional and currently off.'
+
+    return {
+        'label': 'Free Hybrid',
+        'headline': 'Free chatbot mode is ready: local knowledge base first, then Wikipedia, then optional local AI.',
+        'detail': detail,
+        'class': 'live',
+        'model_label': 'FREE AI',
+    }
+
+
+def sanitize_chat_history(history, max_items=12, max_chars=2000):
     cleaned_history = []
     if isinstance(history, list):
-        for item in history[-12:]:
+        for item in history[-int(max_items):]:
             if not isinstance(item, dict):
                 continue
             role = str(item.get('role', '')).strip().lower()
             content = str(item.get('content', '')).strip()
             if role in {'user', 'assistant'} and content:
-                cleaned_history.append({'role': role, 'content': content[:2000]})
+                cleaned_history.append({'role': role, 'content': content[: int(max_chars)]})
+    return cleaned_history
 
-    prompt_messages = [{'role': 'system', 'content': ASSISTANT_SYSTEM_PROMPT}]
-    prompt_messages.extend(cleaned_history)
-    prompt_messages.append({'role': 'user', 'content': str(user_message).strip()[:3000]})
 
-    try:
-        if hasattr(client, 'responses'):
-            resp = client.responses.create(model=OPENAI_MODEL, input=prompt_messages)
-            text = getattr(resp, 'output_text', None)
-            if text and str(text).strip():
-                return {'ok': True, 'message': 'ok', 'reply': str(text).strip()}
+def run_openai_chat_completion(prompt_messages):
+    client = OpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT_SECONDS, max_retries=0)
+    if hasattr(client, 'responses'):
+        resp = client.responses.create(model=OPENAI_MODEL, input=prompt_messages)
+        text = getattr(resp, 'output_text', None)
+        if text and str(text).strip():
+            return str(text).strip()
 
-        chat = client.chat.completions.create(model=OPENAI_MODEL, messages=prompt_messages, temperature=0.3)
-        text = chat.choices[0].message.content if chat and chat.choices else ''
-        return {'ok': True, 'message': 'ok', 'reply': (text or '').strip()}
-    except Exception as ex:
-        fallback = build_local_assistant_fallback(user_message)
-        fallback['message'] = f"fallback_after_error: {str(ex)}"
-        return fallback
+    chat = client.chat.completions.create(model=OPENAI_MODEL, messages=prompt_messages, temperature=0.3)
+    text = chat.choices[0].message.content if chat and chat.choices else ''
+    return (text or '').strip()
+
+
+def generate_assistant_reply(history, user_message):
+    return generate_free_chatbot_reply(history, user_message)
 
 
 def run_facecheck_search(file_storage):
-    if not file_storage or not file_storage.filename:
-        return {'ok': False, 'message': 'Image file is required.'}
-    if not is_allowed_image(file_storage.filename):
-        return {'ok': False, 'message': 'Invalid image type. Use png, jpg, jpeg, or webp.'}
+    image_info = read_image_upload(file_storage, required=True)
+    if not image_info.get('ok'):
+        return {'ok': False, 'message': image_info.get('message', 'Invalid image upload.')}
 
-    filename = secure_filename(file_storage.filename) or 'image.jpg'
-    mime_type = file_storage.mimetype or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-    image_bytes = file_storage.read()
-    if not image_bytes:
-        return {'ok': False, 'message': 'Uploaded file is empty.'}
-    file_storage.stream.seek(0)
+    filename = image_info.get('filename') or 'image.jpg'
+    mime_type = image_info.get('mime_type') or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+    image_bytes = image_info.get('data') or b''
 
     if (requests is None or not FACECHECK_API_TOKEN) and FACECHECK_DEMO:
         digest = hashlib.sha256(image_bytes).hexdigest()[:12]
@@ -2214,14 +2857,14 @@ def load_logged_in_user():
                 'phone': session.get('user_phone', ''),
                 'profile_image': session.get('user_profile_image', ''),
             }
+        session.permanent = g.user is not None
     g.csp_nonce = secrets.token_urlsafe(16)
 
 
 @app.before_request
 def enforce_https_and_limits():
     if ENFORCE_HTTPS:
-        forwarded_proto = (request.headers.get('X-Forwarded-Proto') or '').lower()
-        is_secure_request = request.is_secure or forwarded_proto == 'https'
+        is_secure_request = request.is_secure
         host = (request.host or '').split(':')[0].lower()
         if (not is_secure_request) and host not in {'127.0.0.1', 'localhost'}:
             return redirect(request.url.replace('http://', 'https://', 1), code=301)
@@ -2249,13 +2892,17 @@ def csrf_protect():
         if request.path.startswith('/api/'):
             return jsonify({'error': 'CSRF token missing or invalid.'}), 400
         flash('Security token invalid. Please try again.', 'error')
-        return redirect(request.referrer or url_for('home'))
+        return redirect(get_safe_redirect_target(request.referrer, fallback_endpoint='home'))
 
 
 @app.after_request
 def apply_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+    response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
+    response.headers['Origin-Agent-Cluster'] = '?1'
+    response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
     nonce = getattr(g, 'csp_nonce', '')
@@ -2280,10 +2927,20 @@ def apply_security_headers(response):
         + img_src
         + '; '
         + frame_src
-        + ';'
+        + "; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self';"
     )
     if request.is_secure:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        if ENFORCE_HTTPS:
+            response.headers['Content-Security-Policy'] += ' upgrade-insecure-requests;'
+    if (
+        request.path.startswith('/api/')
+        or request.endpoint in {'login', 'register', 'google_auth_login', 'google_auth_callback', 'logout', 'profile', 'settings'}
+        or g.user is not None
+    ):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     return response
 
 
@@ -2301,6 +2958,14 @@ def handle_405(err):
     return err
 
 
+@app.errorhandler(413)
+def handle_413(err):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Uploaded file is too large. Maximum size is 2 MB.'}), 413
+    flash('Uploaded file is too large. Maximum size is 2 MB.', 'error')
+    return redirect(get_safe_redirect_target(request.referrer, fallback_endpoint='home'))
+
+
 @app.errorhandler(500)
 def handle_500(err):
     if request.path.startswith('/api/'):
@@ -2312,6 +2977,7 @@ def handle_500(err):
 def inject_globals():
     avatar_path = ''
     current_dark_mode = True
+    chat_runtime = get_chat_runtime_status()
     if g.user and g.user['profile_image']:
         avatar_path = url_for('static', filename=f"uploads/{g.user['profile_image']}")
     if g.user:
@@ -2350,6 +3016,13 @@ def inject_globals():
         'csrf_token': get_csrf_token(),
         'static_version': build_static_version(),
         'current_dark_mode': current_dark_mode,
+        'chat_model_name': OPENAI_MODEL,
+        'live_ai_ready': bool(OPENAI_API_KEY and OpenAI is not None),
+        'chat_model_label': chat_runtime['model_label'],
+        'chat_status_label': chat_runtime['label'],
+        'chat_status_headline': chat_runtime['headline'],
+        'chat_status_detail': chat_runtime['detail'],
+        'chat_status_class': chat_runtime['class'],
     }
 
 
@@ -2382,8 +3055,9 @@ def register():
             flash('Please enter a valid phone number (10-15 digits).', 'error')
             return render_template('register.html')
 
-        if len(password) < 8:
-            flash('Password must be at least 8 characters.', 'error')
+        password_error = password_policy_error(password)
+        if password_error:
+            flash(password_error, 'error')
             return render_template('register.html')
 
         if get_user_by_email(email):
@@ -2394,22 +3068,27 @@ def register():
             flash('Phone already exists. Please login.', 'error')
             return redirect(url_for('login'))
 
-        if profile_file and profile_file.filename and (not is_allowed_image(profile_file.filename)):
-            flash('Invalid image type. Use png, jpg, jpeg, or webp.', 'error')
+        prepared_image = read_image_upload(profile_file)
+        if not prepared_image.get('ok'):
+            flash(prepared_image.get('message', 'Invalid image upload.'), 'error')
             return render_template('register.html')
 
         user_id = create_user(name, email, phone, password)
-        saved_image, image_error = save_profile_image(profile_file, user_id)
+        saved_image, image_error = save_profile_image(profile_file, user_id, prepared_image=prepared_image)
         if image_error:
             flash(image_error, 'error')
             return render_template('register.html')
         if saved_image:
             update_user_profile(user_id, name, email, phone, saved_image)
-        session['user_id'] = int(user_id)
-        session['user_name'] = name
-        session['user_email'] = email
-        session['user_phone'] = normalize_phone(phone)
-        session['user_profile_image'] = saved_image or ''
+        start_user_session(
+            {
+                'id': user_id,
+                'name': name,
+                'email': email,
+                'phone': normalize_phone(phone),
+                'profile_image': saved_image or '',
+            }
+        )
         flash('Account created successfully.', 'success')
         return redirect(url_for('analysis'))
 
@@ -2424,7 +3103,7 @@ def login():
     if request.method == 'POST':
         identifier = (request.form.get('identifier') or '').strip().lower()
         password = request.form.get('password') or ''
-        next_url = request.form.get('next') or ''
+        next_url = get_safe_redirect_target(request.form.get('next') or '', fallback_endpoint='analysis')
         ip = get_client_ip()
 
         locked, wait_seconds = get_login_lock_state(identifier, ip)
@@ -2439,17 +3118,11 @@ def login():
             return render_template('login.html', next_url=next_url)
 
         clear_login_failures(identifier, ip)
-        session['user_id'] = int(user['id'])
-        session['user_name'] = str(user['name'] or '')
-        session['user_email'] = str(user['email'] or '')
-        session['user_phone'] = str(user['phone'] or '')
-        session['user_profile_image'] = str(user['profile_image'] or '')
+        start_user_session(user)
         flash('Logged in successfully.', 'success')
-        if next_url.startswith('/'):
-            return redirect(next_url)
-        return redirect(url_for('analysis'))
+        return redirect(next_url)
 
-    next_url = request.args.get('next', '')
+    next_url = get_safe_redirect_target(request.args.get('next', ''), fallback_endpoint='analysis')
     return render_template('login.html', next_url=next_url)
 
 
@@ -2460,10 +3133,7 @@ def google_auth_login():
         return redirect(url_for('login'))
 
     next_url = request.args.get('next', '') or request.referrer or ''
-    if next_url.startswith('/'):
-        session['oauth_next'] = next_url
-    else:
-        session['oauth_next'] = url_for('analysis')
+    session['oauth_next'] = get_safe_redirect_target(next_url, fallback_endpoint='analysis')
 
     state = secrets.token_urlsafe(24)
     session['google_oauth_state'] = state
@@ -2493,7 +3163,7 @@ def google_auth_callback():
     expected = session.pop('google_oauth_state', '')
     next_url = session.pop('oauth_next', url_for('analysis'))
 
-    if not state or not expected or state != expected:
+    if not state or not expected or not secrets.compare_digest(state, expected):
         flash('Google Sign-In state validation failed.', 'error')
         return redirect(url_for('login'))
     if not code:
@@ -2523,19 +3193,15 @@ def google_auth_callback():
             user_id = create_user(name, email, '', secrets.token_urlsafe(32))
             user = get_user_by_id(int(user_id))
 
-        session['user_id'] = int(user['id'])
-        session['user_name'] = str(user['name'] or name or '')
-        session['user_email'] = str(user['email'] or email or '')
-        session['user_phone'] = str(user['phone'] or '')
-        session['user_profile_image'] = str(user['profile_image'] or '')
+        start_user_session(user)
         flash('Google Sign-In successful.', 'success')
-        return redirect(next_url if str(next_url).startswith('/') else url_for('analysis'))
+        return redirect(get_safe_redirect_target(next_url, fallback_endpoint='analysis'))
     except Exception:
         flash('Google Sign-In failed. Please try again.', 'error')
         return redirect(url_for('login'))
 
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
 def logout():
     session.clear()
     flash('You are logged out.', 'success')
@@ -2593,7 +3259,7 @@ def linux_lab():
 @app.route('/features/assistant')
 @login_required
 def ai_assistant():
-    return render_template('features/assistant.html')
+    return redirect(url_for('chatbot'))
 
 
 @app.route('/features/chatbot')
@@ -2881,6 +3547,8 @@ def create_payment_api():
 @app.route('/api/simulate-payment', methods=['POST'])
 @api_login_required
 def simulate_payment_api():
+    if not ENABLE_SIMULATED_PAYMENTS:
+        return jsonify({'ok': False, 'message': 'Simulated payments are disabled on this server.'}), 403
     if ADS_ONLY_MONETIZATION:
         return jsonify({'ok': False, 'message': 'Simulated purchase is disabled in Ads-only mode.'}), 403
     payload = request.json or {}
@@ -3110,10 +3778,9 @@ def change_password_with_code_api():
 
     if new_password != confirm_password:
         return jsonify({'ok': False, 'message': 'New password and confirm password do not match.'}), 400
-    if len(new_password) < 8:
-        return jsonify({'ok': False, 'message': 'Password must be at least 8 characters.'}), 400
-    if re.search(r'[a-z]', new_password) is None or re.search(r'[A-Z]', new_password) is None or re.search(r'\d', new_password) is None:
-        return jsonify({'ok': False, 'message': 'Password must include uppercase, lowercase, and number.'}), 400
+    password_error = password_policy_error(new_password)
+    if password_error:
+        return jsonify({'ok': False, 'message': password_error}), 400
 
     expected = str(flow.get('hash') or '')
     salt = str(flow.get('salt') or '')
@@ -3142,8 +3809,14 @@ def reset_reports_api():
 @api_login_required
 def analyze():
     data = request.json or {}
-    input_text = data.get('input', '')
-    input_type = data.get('type', '')
+    input_text = str(data.get('input', '') or '')
+    input_type = str(data.get('type', '') or '').strip().lower()
+    if input_type not in {'command', 'password', 'url'}:
+        return jsonify({'error': 'Invalid analysis type.'}), 400
+    if not input_text.strip():
+        return jsonify({'error': 'Input is required.'}), 400
+    if len(input_text) > 4000:
+        return jsonify({'error': 'Input is too long. Maximum allowed is 4000 characters.'}), 400
 
     score, threats = calculate_threat_score(input_text, input_type)
     status = 'SAFE' if score < 30 else 'WARNING' if score < 70 else 'DANGEROUS'
@@ -3441,21 +4114,80 @@ def assistant_chat_api():
     return jsonify(result), code
 
 
+@app.route('/chat', methods=['POST'])
 @app.route('/api/chat', methods=['POST'])
 @api_login_required
 def chat():
-    user_message = (request.json or {}).get('message', '').lower().strip()
+    data = request.json or {}
+    user_message = str(data.get('message') or '').strip()
+    history = data.get('history') or []
+    if not user_message:
+        return jsonify({'ok': False, 'message': 'Message is required.', 'reply': ''}), 400
+    if len(user_message) > 3000:
+        return jsonify({'ok': False, 'message': 'Message too long. Limit is 3000 characters.', 'reply': ''}), 400
 
-    responses = {
-        'command': 'I will analyze that command for you. Use the Command Analyzer tool.',
-        'password': 'Check password strength in Password Checker module.',
-        'url': 'Scan URLs using URL Scanner. Stay safe.',
-        'attack': 'Attack simulations are available in Attack Simulator (safe mode only).',
-        'default': 'I can help with cybersecurity analysis. Try Command Analyzer, Password Checker, or URL Scanner.',
-    }
+    started = time.time()
+    result = generate_assistant_reply(history, user_message)
+    latency_ms = int((time.time() - started) * 1000)
+    reply = str(result.get('reply') or '').strip()[:4000]
+    chat_runtime = get_chat_runtime_status()
+    if result.get('message') == 'knowledge_base':
+        chat_runtime = {
+            'label': 'Knowledge Base',
+            'headline': 'Matched your question with the local cybersecurity knowledge base.',
+            'detail': 'Instant local answer delivered from data.json before using Wikipedia or local AI.',
+            'class': 'live',
+            'model_label': 'LOCAL KB',
+        }
+    elif result.get('message') == 'wikipedia':
+        chat_runtime = {
+            'label': 'Wikipedia',
+            'headline': 'A related Wikipedia summary was used for this answer.',
+            'detail': 'No local match was found, so the chatbot used Wikipedia as the next free source.',
+            'class': 'live',
+            'model_label': 'WIKIPEDIA',
+        }
+    elif result.get('message') == 'ollama':
+        chat_runtime = {
+            'label': 'Local AI',
+            'headline': f'Local Ollama model {OLLAMA_MODEL} generated this answer.',
+            'detail': 'The chatbot used your local AI runtime instead of any paid API.',
+            'class': 'live',
+            'model_label': 'OLLAMA',
+        }
+    elif result.get('message') in {'fallback', 'fallback_mode'}:
+        chat_runtime = {
+            'label': 'Local Guide',
+            'headline': 'CyberBot generated a local cybersecurity answer.',
+            'detail': 'Answer generated from built-in cybersecurity guidance.',
+            'class': 'live',
+            'model_label': 'CYBERBOT',
+        }
 
-    response = responses.get(user_message, responses['default'])
-    return jsonify({'response': response})
+    return jsonify(
+        {
+            'ok': bool(result.get('ok', False)),
+            'reply': reply,
+            'response': reply,
+            'mode': result.get('message', 'ok'),
+            'notice': str(result.get('notice') or '').strip(),
+            'latency_ms': latency_ms,
+            'model': (
+                'knowledge-base'
+                if result.get('message') == 'knowledge_base'
+                else 'wikipedia'
+                if result.get('message') == 'wikipedia'
+                else OLLAMA_MODEL
+                if result.get('message') == 'ollama'
+                else 'local-fallback'
+            ),
+            'model_label': chat_runtime['model_label'],
+            'status_label': chat_runtime['label'],
+            'status_text': chat_runtime['headline'],
+            'status_detail': chat_runtime['detail'],
+            'status_class': chat_runtime['class'],
+        }
+    )
 
 
 try:
@@ -3468,6 +4200,6 @@ except sqlite3.Error:
         print('Warning: SQLite initialization failed. Running in degraded mode without persistent storage.')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
 
 

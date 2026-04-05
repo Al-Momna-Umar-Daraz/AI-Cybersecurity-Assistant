@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cybershield-static-v6';
+const CACHE_NAME = 'cybershield-static-v9';
 const OFFLINE_URL = '/static/offline.html';
 const ASSETS = [
   '/static/style.css',

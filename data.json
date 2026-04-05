@@ -1,0 +1,134 @@
+[
+  {
+    "keywords": ["phishing", "scam", "fake email", "credential theft"],
+    "answer": "Phishing is a cyber attack where an attacker tricks people into sharing passwords, OTP codes, banking data, or other sensitive information through fake emails, websites, messages, or calls."
+  },
+  {
+    "keywords": ["malware", "virus", "trojan", "worm", "spyware"],
+    "answer": "Malware is malicious software designed to damage systems, spy on users, steal data, or give attackers unauthorized access. Common examples include viruses, worms, trojans, spyware, and ransomware."
+  },
+  {
+    "keywords": ["strong password", "secure password", "password policy", "password create"],
+    "answer": "A strong password should be long, unique, and hard to guess. Use at least 12 to 16 characters, mix letters, numbers, and symbols, avoid personal details, and never reuse the same password across websites."
+  },
+  {
+    "keywords": ["port scanning", "open ports", "scan ports", "nmap"],
+    "answer": "Port scanning is the process of checking which network ports are open on a host. Attackers use it to find exposed services, while defenders use it to identify unnecessary or risky services."
+  },
+  {
+    "keywords": ["firewall", "network firewall", "allow ports", "block traffic"],
+    "answer": "A firewall filters inbound and outbound network traffic based on rules. It helps block unauthorized access, limit exposed services, and reduce attack surface."
+  },
+  {
+    "keywords": ["data breach", "data leak", "stolen data", "breach disclosure"],
+    "answer": "A data breach happens when sensitive information is accessed, exposed, stolen, or shared without authorization. It can involve passwords, personal records, payment details, or business data."
+  },
+  {
+    "keywords": ["ransomware", "files encrypted", "ransom attack", "crypto malware"],
+    "answer": "Ransomware is malware that encrypts files or locks systems and demands payment for recovery. Strong backups, patching, endpoint protection, and phishing awareness are important defenses."
+  },
+  {
+    "keywords": ["social engineering", "human hacking", "pretexting", "manipulation attack"],
+    "answer": "Social engineering uses deception and manipulation to convince people to reveal secrets, transfer money, install malware, or bypass security controls."
+  },
+  {
+    "keywords": ["2fa", "mfa", "two factor", "multi factor", "otp"],
+    "answer": "Two-factor or multi-factor authentication adds an extra verification step beyond the password, such as an authenticator app, hardware key, or biometric check. It greatly reduces account takeover risk."
+  },
+  {
+    "keywords": ["vpn", "virtual private network", "secure tunnel"],
+    "answer": "A VPN encrypts traffic between your device and a trusted VPN server. It can reduce exposure on untrusted networks, but it is not a replacement for patching, secure passwords, and MFA."
+  },
+  {
+    "keywords": ["sql injection", "sqli", "database injection"],
+    "answer": "SQL injection is a vulnerability where unsafe user input is treated as part of a database query. It can lead to unauthorized access, data leakage, or data modification if queries are not parameterized."
+  },
+  {
+    "keywords": ["xss", "cross site scripting", "script injection"],
+    "answer": "Cross-site scripting, or XSS, happens when untrusted input is rendered as executable script in a browser. It can steal session data, modify pages, or perform actions as the victim user."
+  },
+  {
+    "keywords": ["ddos", "denial of service", "traffic flood", "bot traffic"],
+    "answer": "A DDoS attack overwhelms a service with large volumes of traffic or requests so legitimate users cannot access it. Common defenses include rate limiting, CDN protection, autoscaling, and WAF rules."
+  },
+  {
+    "keywords": ["encryption", "encrypt data", "cipher text"],
+    "answer": "Encryption converts readable data into unreadable ciphertext using a key. It protects sensitive information in transit and at rest so unauthorized parties cannot easily read it."
+  },
+  {
+    "keywords": ["hashing", "hash function", "sha256", "password hash"],
+    "answer": "Hashing transforms data into a fixed-length value and is commonly used for integrity checks and secure password storage. Hashing is one-way and is not the same as encryption."
+  },
+  {
+    "keywords": ["brute force", "password guessing", "credential attack"],
+    "answer": "A brute-force attack tries many passwords or keys until one works. Strong unique passwords, account lockouts, MFA, and rate limiting help defend against it."
+  },
+  {
+    "keywords": ["patch management", "security updates", "patching", "update software"],
+    "answer": "Patch management is the process of identifying, testing, and applying updates to fix security vulnerabilities and bugs. Delayed patching leaves systems exposed to known exploits."
+  },
+  {
+    "keywords": ["least privilege", "minimum access", "limited permissions"],
+    "answer": "Least privilege means giving users, apps, and services only the permissions they truly need. This limits damage if an account, app, or device is compromised."
+  },
+  {
+    "keywords": ["incident response", "security incident", "respond to attack"],
+    "answer": "Incident response is the structured process of preparing for, detecting, containing, investigating, recovering from, and documenting cybersecurity incidents."
+  },
+  {
+    "keywords": ["botnet", "infected devices", "zombie network"],
+    "answer": "A botnet is a group of compromised devices controlled by an attacker. Botnets are often used for DDoS attacks, spam campaigns, malware delivery, or credential attacks."
+  },
+  {
+    "keywords": ["zero day", "0day", "unknown vulnerability"],
+    "answer": "A zero-day vulnerability is a software flaw that is unknown to the vendor or has no patch available yet. It is risky because defenders have little time to prepare."
+  },
+  {
+    "keywords": ["https", "ssl", "tls", "secure website"],
+    "answer": "HTTPS uses TLS encryption to protect data between the browser and the website. It helps prevent eavesdropping and tampering, but HTTPS alone does not guarantee that a site is safe."
+  },
+  {
+    "keywords": ["backup", "data recovery", "restore files"],
+    "answer": "Backups help restore systems and files after ransomware, accidental deletion, hardware failure, or compromise. Good backups should be tested, versioned, and at least one copy should be isolated."
+  },
+  {
+    "keywords": ["ids", "ips", "intrusion detection", "intrusion prevention"],
+    "answer": "An IDS monitors traffic and alerts on suspicious behavior, while an IPS can actively block malicious traffic. Both help improve detection and network defense."
+  },
+  {
+    "keywords": ["antivirus", "endpoint security", "endpoint protection"],
+    "answer": "Antivirus or endpoint protection tools help detect and block malware, suspicious files, malicious behavior, and unsafe scripts on user devices and servers."
+  },
+  {
+    "keywords": ["siem", "security information and event management", "log correlation"],
+    "answer": "A SIEM collects and correlates logs from many systems so security teams can search events, detect suspicious activity, and investigate incidents more efficiently."
+  },
+  {
+    "keywords": ["dns spoofing", "dns poisoning", "fake dns"],
+    "answer": "DNS spoofing or DNS poisoning tricks users into visiting the wrong IP address by tampering with DNS responses. It can redirect victims to fake or malicious sites."
+  },
+  {
+    "keywords": ["session hijacking", "stolen session", "session cookie"],
+    "answer": "Session hijacking happens when an attacker steals or abuses a valid session token or cookie to impersonate a user without knowing the password."
+  },
+  {
+    "keywords": ["privilege escalation", "escalate privileges", "admin access"],
+    "answer": "Privilege escalation happens when a user or attacker gains higher permissions than intended, such as moving from a normal user account to administrator or root access."
+  },
+  {
+    "keywords": ["waf", "web application firewall", "protect website"],
+    "answer": "A web application firewall filters and monitors HTTP traffic to help block common web attacks such as SQL injection, XSS, and malicious request patterns."
+  },
+  {
+    "keywords": ["email spoofing", "spoofed email", "fake sender"],
+    "answer": "Email spoofing makes a message appear to come from a trusted sender even when it does not. SPF, DKIM, and DMARC help reduce spoofing and improve email trust."
+  },
+  {
+    "keywords": ["insider threat", "malicious employee", "internal risk"],
+    "answer": "An insider threat comes from a person inside the organization, such as an employee or contractor, who misuses access intentionally or accidentally causes harm."
+  },
+  {
+    "keywords": ["security awareness", "user training", "cyber training"],
+    "answer": "Security awareness training teaches users how to recognize phishing, protect passwords, handle sensitive data, and report suspicious activity before it becomes a larger incident."
+  }
+]

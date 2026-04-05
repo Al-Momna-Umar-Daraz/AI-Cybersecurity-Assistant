@@ -1,6 +1,8 @@
 # AI Cybersecurity Assistant
 
-AI-powered cybersecurity web platform for practical analysis, training, and reporting.
+AI-powered cybersecurity web platform for practical analysis, defensive guidance, and security reporting.
+
+A beginner-friendly Flask application that combines cybersecurity utilities, guided chatbot support, and visual dashboards in one secure web interface.
 
 [![CI](https://github.com/Al-Momna-Umar-Daraz/AI-Cybersecurity-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/Al-Momna-Umar-Daraz/AI-Cybersecurity-Assistant/actions/workflows/ci.yml)
 
