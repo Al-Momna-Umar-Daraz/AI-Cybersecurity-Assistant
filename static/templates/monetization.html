@@ -5,16 +5,25 @@
 {% block content %}
 <div class="reports-container">
     <h1><i class="fas fa-coins"></i> Monetization Center</h1>
-    <p class="muted-text">Subscription and in-app purchase flow is disabled. This page now focuses only on Google AdSense earning setup.</p>
+    <p class="muted-text">This area is now focused on Google ad earning readiness for the site owner or admin.</p>
 
     <div class="settings-section mt-1">
         <h3><i class="fas fa-rectangle-ad"></i> Google Ads Earning Mode</h3>
         {% if ads_enabled %}
         <p class="safe">AdSense script is enabled in this app.</p>
-        <p class="muted-text">Place real ad units in content sections and keep traffic policy-compliant.</p>
+        <p class="muted-text">Place approved ad units in live content sections and keep traffic policy-compliant.</p>
         {% else %}
         <p class="warning">AdSense is not enabled yet. Add <code>ADSENSE_CLIENT</code> in <code>.env</code>.</p>
         {% endif %}
+    </div>
+
+    <div class="settings-section mt-1">
+        <h3><i class="fas fa-sliders"></i> Admin Control Checklist</h3>
+        <ul class="report-threats">
+            <li>Google ads approval and ad serving must still be enabled from your official AdSense dashboard.</li>
+            <li>This app can show readiness status, but Google account approval and payouts cannot be forced locally from code.</li>
+            <li>Use this page to confirm the app is ready before live hosting.</li>
+        </ul>
     </div>
 
     <div class="settings-section mt-1">
@@ -30,7 +39,12 @@
 
     <div class="settings-section mt-1">
         <h3>Payout Note (Pakistan)</h3>
+        {% if pk_bank_payout_configured %}
+        <p class="safe">Server payout placeholders are configured for {{ pk_bank_name }}.</p>
+        <p class="muted-text">Final AdSense bank linking still happens inside your Google payments dashboard.</p>
+        {% else %}
         <p class="muted-text">AdSense payout account details are managed inside Google AdSense dashboard, not inside this app page.</p>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

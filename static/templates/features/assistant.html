@@ -1,23 +1,79 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="chat-container">
-    <div class="chat-header">
-        <i class="fas fa-robot"></i>
-        <h1>CyberShield AI Assistant</h1>
-    </div>
+<div
+    id="assistantProShell"
+    class="chat-container pro-chat-shell"
+    data-disable-insight="1"
+    data-init-model-label="{{ chat_model_label }}"
+    data-init-mode-label="{{ chat_status_label }}"
+    data-init-mode-class="{{ chat_status_class }}"
+    data-init-status-text="{{ chat_status_headline }}"
+    data-init-status-detail="{{ chat_status_detail }}"
+    data-init-notice-text="{{ chat_status_detail if chat_status_class != 'live' else '' }}"
+    data-init-welcome-label="{{ chat_model_label }}"
+    data-init-welcome-text="Hello! I am your pro cybersecurity assistant. Ask me about phishing, email breach checks, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs."
+>
+    <aside class="pro-chat-side">
+        <div class="pro-chat-side-card">
+            <div class="pro-chat-avatar">
+                <i class="fas fa-robot"></i>
+            </div>
+            <p class="pro-chat-kicker">Cybersecurity AI</p>
+            <h1>Chatbot Pro</h1>
+            <p class="pro-chat-subtitle">How can I assist you?</p>
 
-    <div id="assistantMessages" class="chat-messages">
-        <div class="message bot">
-            <div class="message-content">
-                Hello! I am your AI assistant. Ask me anything about cybersecurity best practices, incident response, or secure configuration.
+            <div class="pro-chat-badges">
+                <span id="assistantModelBadge" class="pro-chat-badge model">{{ chat_model_label or 'Secure Fallback' }}</span>
+                <span id="assistantModeBadge" class="pro-chat-badge {{ chat_status_class }}">{{ chat_status_label or 'Ready' }}</span>
+            </div>
+
+            <div class="pro-chat-side-list">
+                <div class="pro-chat-side-item"><i class="fas fa-shield-check"></i><span>Defensive guidance</span></div>
+                <div class="pro-chat-side-item"><i class="fas fa-bolt"></i><span>Fast response mode</span></div>
+                <div class="pro-chat-side-item"><i class="fas fa-list-check"></i><span>Checklist-style answers</span></div>
+                <div class="pro-chat-side-item"><i class="fas fa-lock"></i><span>Safe-use policy enabled</span></div>
             </div>
         </div>
-    </div>
+    </aside>
 
-    <div class="chat-input">
-        <input type="text" id="assistantInput" placeholder="Ask your cybersecurity question...">
-        <button type="button" onclick="sendAssistantMessage()"><i class="fas fa-paper-plane"></i></button>
-    </div>
+    <section class="pro-chat-main">
+        <div class="pro-chat-topbar">
+            <div>
+                <div class="pro-chat-title">ChatGPT Style Security Assistant</div>
+                <div id="assistantStatusText" class="pro-chat-status">{{ chat_status_headline }}</div>
+            </div>
+            <button type="button" class="btn-secondary pro-chat-clear" onclick="clearAssistantChat()"><i class="fas fa-trash"></i> Clear</button>
+        </div>
+
+        <div id="assistantNotice" class="pro-chat-notice {% if chat_status_class == 'live' %}live hidden{% else %}fallback{% endif %}">{% if chat_status_class != 'live' %}{{ chat_status_detail }}{% endif %}</div>
+
+        <div class="pro-chat-content">
+            <div class="assistant-quick-prompts pro-chat-prompts">
+                <button type="button" class="suggestion-chip" onclick="useAssistantPrompt('How can I secure my Gmail account from phishing attacks?')">Secure Gmail</button>
+                <button type="button" class="suggestion-chip" onclick="useAssistantPrompt('Create a basic SOC checklist for a small company.')">SOC Checklist</button>
+                <button type="button" class="suggestion-chip" onclick="useAssistantPrompt('Give me incident response steps after suspicious login activity.')">Incident Response</button>
+                <button type="button" class="suggestion-chip" onclick="useAssistantPrompt('Give me a Linux server hardening checklist.')">Linux Hardening</button>
+            </div>
+
+            <div id="assistantMessages" class="chat-messages pro-chat-messages">
+                <div class="message bot">
+                    <div class="message-meta">{{ chat_model_label }}</div>
+                    <div class="message-content">Hello! I am your pro cybersecurity assistant. Ask me about phishing, email breach checks, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.</div>
+                </div>
+            </div>
+
+            <div class="pro-chat-composer">
+                <div class="pro-chat-composer-meta">
+                    <span><i class="fas fa-keyboard"></i> Enter to send, Shift+Enter for new line</span>
+                    <span id="assistantStatusHint"><i class="fas fa-brain"></i> {{ chat_status_detail }}</span>
+                </div>
+                <div class="chat-input pro-chat-input">
+                    <textarea id="assistantInput" rows="3" placeholder="Ask anything about cybersecurity, hardening, incidents, phishing, passwords, or security best practices..."></textarea>
+                    <button id="assistantSendBtn" type="button" onclick="sendAssistantMessage()"><i class="fas fa-paper-plane"></i><span>Send</span></button>
+                </div>
+            </div>
+        </div>
+    </section>
 </div>
 {% endblock %}

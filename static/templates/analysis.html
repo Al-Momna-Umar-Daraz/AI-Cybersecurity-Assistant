@@ -1,8 +1,71 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div class="dashboard">
+<div class="dashboard dashboard-with-floating-chatbot">
     <h1><i class="fas fa-chart-pie"></i> Analysis Dashboard</h1>
+
+    <div class="dashboard-command-bar">
+        <form class="page-quick-search page-quick-search-dashboard" id="dashboardQuickSearchForm">
+            <label class="sr-only" for="dashboardQuickSearch">Search tools from dashboard</label>
+            <i class="fas fa-magnifying-glass"></i>
+            <input id="dashboardQuickSearch" type="search" list="siteQuickSearchList" placeholder="Open any tool or page from here">
+            <button type="submit" class="btn-secondary">Open</button>
+        </form>
+        <div class="dashboard-meta-pills">
+            <span class="dashboard-meta-pill">Live filters</span>
+            <span class="dashboard-meta-pill">Fast jump</span>
+            <span class="dashboard-meta-pill">Current scan trends</span>
+        </div>
+    </div>
+
+    <div class="dashboard-intro-grid">
+        <article class="dashboard-brief-card">
+            <p class="dashboard-assistant-kicker">Mission Control</p>
+            <h2>Scan trends, search activity, and priority changes in one place.</h2>
+            <p>Use filters to narrow the signal, then refresh the board to keep your numbers current without leaving the dashboard.</p>
+            <div class="dashboard-motion-row">
+                <div class="dashboard-motion-chip">
+                    <div>
+                        <strong><i class="fas fa-magnifying-glass-chart"></i> Search Console</strong>
+                        <p>Quickly focus on risky commands, email exposure, and scan types.</p>
+                    </div>
+                </div>
+                <div class="dashboard-motion-chip">
+                    <div>
+                        <strong><i class="fas fa-terminal"></i> Live Console</strong>
+                        <p>Use refresh as a visual checkpoint instead of guessing whether data changed.</p>
+                    </div>
+                </div>
+            </div>
+        </article>
+
+        <article class="dashboard-visual-card dashboard-console-card dashboard-assistant-launch">
+            <div class="dashboard-assistant-copy">
+                <p class="dashboard-assistant-kicker">Ask Chatbot</p>
+                <h2>Need a quick cybersecurity answer while checking the dashboard?</h2>
+                <p>Open the assistant for fast help with command checks, email exposure, password guidance, and scan summaries without leaving this page.</p>
+                <div class="dashboard-assistant-actions">
+                    <a href="/features/chatbot" class="btn-primary">
+                        <i class="fas fa-robot"></i> Open Chatbot
+                    </a>
+                    <a href="/features/assistant" class="btn-secondary">
+                        <i class="fas fa-comment-dots"></i> Ask Now
+                    </a>
+                </div>
+            </div>
+            <div class="dashboard-robot-zone dashboard-robot-inline" aria-hidden="true">
+                <div class="dashboard-robot-halo"></div>
+                <div class="dashboard-robot-tag">Assistant</div>
+                <div class="dashboard-robot-runner">
+                    <div class="dashboard-robot-video-shell">
+                        <video class="dashboard-robot-video" autoplay muted loop playsinline>
+                            <source src="{{ url_for('static', filename='videos/vedio.mp4') }}" type="video/mp4">
+                        </video>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </div>
 
     <div class="toolbar-row">
         <div class="toolbar-item">
@@ -15,12 +78,13 @@
         </div>
         <div class="toolbar-item toolbar-grow">
             <label for="analysisSearch">Search</label>
-            <input id="analysisSearch" type="text" placeholder="Example: rm -rf, DANGEROUS, breach, portscan, facecheck" value="{{ keyword }}">
+            <input id="analysisSearch" type="text" placeholder="Example: rm -rf, DANGEROUS, email breach, portscan, facecheck" value="{{ keyword }}">
         </div>
-        <button class="btn-secondary" type="button" onclick="refreshAnalysisDashboard()">
+        <button class="btn-secondary" id="analysisRefreshBtn" type="button" onclick="refreshAnalysisDashboard()">
             <i class="fas fa-sync"></i> Refresh
         </button>
     </div>
+    <p id="analysisRefreshStatus" class="muted-text">Dashboard is ready.</p>
 
     <div class="stats-grid">
         <div class="stat-box">
@@ -45,52 +109,42 @@
         </div>
     </div>
 
-    <div class="charts-container">
-        <canvas id="threatChart"></canvas>
-        <canvas id="typeChart"></canvas>
-        <canvas id="trendChart" class="trend-chart"></canvas>
-    </div>
-
-    <div class="settings-section mt-1 dashboard-assistant-launch">
-        <div class="dashboard-assistant-copy">
-            <p class="dashboard-assistant-kicker">Chatbot</p>
-            <h3><i class="fas fa-robot"></i> Chatbot</h3>
-            <p class="muted-text">Robot par click karein ya button use karein. Aap seedha chatbot page par chalay jayenge jahan full conversation view milegi.</p>
-
-            <div class="assistant-quick-prompts">
-                <a href="/features/chatbot" class="suggestion-chip">Secure Gmail</a>
-                <a href="/features/chatbot" class="suggestion-chip">SOC Checklist</a>
-                <a href="/features/chatbot" class="suggestion-chip">Incident Response</a>
+    <div class="charts-container charts-container-light">
+        <section class="chart-panel chart-panel-compact">
+            <div class="chart-panel-head">
+                <span><i class="fas fa-circle-notch"></i> Threat Mix</span>
+                <small>Smaller quick view</small>
             </div>
-
-            <div class="dashboard-assistant-actions">
-                <a href="/features/chatbot" class="btn-analyze">
-                    <i class="fas fa-paper-plane"></i> Chatbot
-                </a>
+            <canvas id="threatChart"></canvas>
+        </section>
+        <section class="chart-panel">
+            <div class="chart-panel-head">
+                <span><i class="fas fa-chart-column"></i> Module Risk</span>
+                <small>Average score by tool</small>
             </div>
-        </div>
-
-        <a href="/features/chatbot" class="dashboard-robot-zone" aria-label="Open chatbot">
-            <div class="dashboard-robot-track"></div>
-            <div class="dashboard-robot-halo"></div>
-            <div class="dashboard-robot-tag">Chatbot</div>
-            <div class="dashboard-robot-runner">
-                <div class="dashboard-robot-video-shell">
-                    <video
-                        class="dashboard-robot-video"
-                        autoplay
-                        muted
-                        loop
-                        playsinline
-                        preload="auto"
-                    >
-                        <source src="{{ url_for('static', filename='videos/vedio.mp4') }}" type="video/mp4">
-                    </video>
-                </div>
+            <canvas id="typeChart"></canvas>
+        </section>
+        <section class="chart-panel chart-panel-wide">
+            <div class="chart-panel-head">
+                <span><i class="fas fa-wave-square"></i> Trend</span>
+                <small>Recent activity window</small>
             </div>
-        </a>
+            <canvas id="trendChart" class="trend-chart"></canvas>
+        </section>
     </div>
 </div>
+
+<a href="/features/chatbot" class="dashboard-robot-zone dashboard-chatbot-float dashboard-chatbot-corner dashboard-chatbot-raised" aria-label="Open chatbot">
+    <div class="dashboard-robot-halo"></div>
+    <div class="dashboard-robot-tag">Chatbot</div>
+    <div class="dashboard-robot-runner">
+        <div class="dashboard-robot-video-shell">
+            <video class="dashboard-robot-video" autoplay muted loop playsinline>
+                <source src="{{ url_for('static', filename='videos/vedio.mp4') }}" type="video/mp4">
+            </video>
+        </div>
+    </div>
+</a>
 {% endblock %}
 
 {% block scripts %}

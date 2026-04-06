@@ -1,6 +1,7 @@
 ﻿from flask import Flask, flash, g, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 import csv
 import base64
+from flask import send_file
 import hashlib
 import hmac
 import ipaddress
@@ -10,9 +11,15 @@ import os
 import re
 import secrets
 import socket
+import smtplib
 import sqlite3
+import ssl
+import subprocess
+import sys
 import time
+from io import BytesIO
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 from urllib import error as url_error
@@ -41,9 +48,39 @@ try:
     import wikipedia as wikipedia_lib
 except Exception:
     wikipedia_lib = None
+try:
+    from google.cloud import vision as google_cloud_vision
+except Exception:
+    google_cloud_vision = None
+try:
+    from PIL import Image, ImageFilter, ImageOps, ImageStat
+except Exception:
+    Image = None
+    ImageOps = None
+    ImageFilter = None
+    ImageStat = None
+try:
+    from PIL import ImageDraw
+except Exception:
+    ImageDraw = None
+try:
+    from PIL import ImageFont
+except Exception:
+    ImageFont = None
+try:
+    import numpy as np
+except Exception:
+    np = None
+try:
+    import joblib
+except Exception:
+    joblib = None
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / 'cybersecurity.db'
+PRIMARY_DB_PATH = BASE_DIR / 'cybersecurity.db'
+RECOVERY_DB_PATH = BASE_DIR / 'cybersecurity_live.db'
+RUNTIME_DB_PATH = BASE_DIR / 'cybersecurity_runtime.db'
+DB_PATH = PRIMARY_DB_PATH
 CSV_PATH = BASE_DIR / 'dataset.csv'
 CHATBOT_DATA_PATH = BASE_DIR / 'data.json'
 if load_dotenv is not None:
@@ -67,6 +104,7 @@ GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '').strip()
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '').strip()
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', '').strip()
 GOOGLE_OAUTH_SCOPE = 'openid email profile'
+GOOGLE_APPLICATION_CREDENTIALS_PATH = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '').strip()
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '').strip()
 STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '').strip()
@@ -85,12 +123,23 @@ PK_IBAN = os.getenv('PK_IBAN', UBL_IBAN).strip()
 BANK_TRANSFER_AUTO_APPROVE = os.getenv('BANK_TRANSFER_AUTO_APPROVE', '0').strip() == '1'
 ENABLE_SIMULATED_PAYMENTS = os.getenv('ENABLE_SIMULATED_PAYMENTS', '0').strip() == '1'
 OTP_DEBUG_MODE = os.getenv('OTP_DEBUG_MODE', '0').strip() == '1'
+SMTP_HOST = os.getenv('SMTP_HOST', '').strip()
+SMTP_PORT = int(os.getenv('SMTP_PORT', '587').strip() or '587')
+SMTP_USERNAME = os.getenv('SMTP_USERNAME', '').strip()
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '').strip()
+SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', '').strip()
+SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', '1').strip() == '1'
+SMTP_USE_SSL = os.getenv('SMTP_USE_SSL', '0').strip() == '1'
 ADS_ONLY_MONETIZATION = os.getenv('ADS_ONLY_MONETIZATION', '1').strip() == '1'
 TRUST_PROXY_HEADERS = os.getenv('TRUST_PROXY_HEADERS', '0').strip() == '1'
 SESSION_TTL_HOURS = max(1, int(os.getenv('SESSION_TTL_HOURS', '12')))
 MIN_PASSWORD_LENGTH = max(10, int(os.getenv('MIN_PASSWORD_LENGTH', '12')))
 UPLOAD_BYTES_LIMIT = 2 * 1024 * 1024
 ENFORCE_HTTPS = os.getenv('ENFORCE_HTTPS', '0') == '1'
+LOCAL_FACE_DB_DIR = BASE_DIR / 'data' / 'face_db'
+LOCAL_FACE_IMAGE_DIR = BASE_DIR / 'data' / 'face_db_images'
+FACE_QUERY_IMAGE_DIR = BASE_DIR / 'data' / 'face_queries'
+MODEL_DATA_DIR = BASE_DIR / 'data' / 'models'
 DANGEROUS_PORTS = {
     21: 'FTP',
     22: 'SSH',
@@ -112,6 +161,38 @@ DANGEROUS_PORTS = {
     5900: 'VNC',
     6379: 'Redis',
     8080: 'HTTP-Alt',
+}
+FALLBACK_THREAT_PATTERNS = {
+    'command': [
+        {'pattern_text': 'rm -rf', 'threat_level': 85},
+        {'pattern_text': 'sudo', 'threat_level': 35},
+        {'pattern_text': 'mkfs', 'threat_level': 95},
+        {'pattern_text': 'dd if=', 'threat_level': 90},
+        {'pattern_text': 'net user', 'threat_level': 55},
+        {'pattern_text': 'powershell -enc', 'threat_level': 70},
+        {'pattern_text': 'curl http', 'threat_level': 28},
+        {'pattern_text': 'wget http', 'threat_level': 28},
+    ],
+    'password': [
+        {'pattern_text': 'password', 'threat_level': 35},
+        {'pattern_text': '123456', 'threat_level': 30},
+        {'pattern_text': 'qwerty', 'threat_level': 28},
+        {'pattern_text': 'admin', 'threat_level': 22},
+        {'pattern_text': 'welcome', 'threat_level': 20},
+        {'pattern_text': 'letmein', 'threat_level': 26},
+    ],
+    'url': [
+        {'pattern_text': 'free-gift', 'threat_level': 22},
+        {'pattern_text': 'verify-account', 'threat_level': 26},
+        {'pattern_text': 'login-secure', 'threat_level': 22},
+        {'pattern_text': 'bank-update', 'threat_level': 30},
+        {'pattern_text': 'bit.ly', 'threat_level': 18},
+        {'pattern_text': 'tinyurl', 'threat_level': 18},
+        {'pattern_text': '.tk', 'threat_level': 30},
+        {'pattern_text': '.ru', 'threat_level': 22},
+        {'pattern_text': '.xyz', 'threat_level': 18},
+        {'pattern_text': '@', 'threat_level': 15},
+    ],
 }
 LINUX_LAB_RULES = {
     'pwd': {'safe': True, 'tip': 'Print working directory.'},
@@ -473,13 +554,143 @@ if stripe is not None and STRIPE_SECRET_KEY:
 
 def get_db_connection():
     global DB_PATH
+    refresh_recovery_db_copy()
+    preferred_paths = []
+    for candidate in [DB_PATH, RECOVERY_DB_PATH, PRIMARY_DB_PATH, RUNTIME_DB_PATH]:
+        if candidate not in preferred_paths:
+            preferred_paths.append(candidate)
+    for candidate in preferred_paths:
+        try:
+            conn = sqlite3.connect(candidate)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+            ).fetchone()
+            if row:
+                DB_PATH = candidate
+                return conn
+            conn.close()
+        except sqlite3.Error:
+            continue
     try:
         conn = sqlite3.connect(DB_PATH)
     except sqlite3.Error:
-        DB_PATH = BASE_DIR / 'cybersecurity_runtime.db'
+        DB_PATH = RUNTIME_DB_PATH
         conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def refresh_recovery_db_copy():
+    if not PRIMARY_DB_PATH.exists():
+        return
+    try:
+        data = PRIMARY_DB_PATH.read_bytes()
+        if not data:
+            return
+        RECOVERY_DB_PATH.write_bytes(data)
+    except Exception:
+        return
+
+
+def get_snapshot_user_row(where_sql, params):
+    candidates = []
+    latest_session_dbs = sorted(
+        BASE_DIR.glob('cybersecurity_session_*.db'),
+        key=lambda item: item.stat().st_mtime if item.exists() else 0,
+        reverse=True,
+    )
+    for candidate in [DB_PATH] + latest_session_dbs + [RECOVERY_DB_PATH, PRIMARY_DB_PATH]:
+        if candidate.exists() and candidate not in candidates:
+            candidates.append(candidate)
+    for candidate in candidates:
+        try:
+            uri = 'file:' + str(candidate).replace('\\', '/') + '?mode=ro&immutable=1'
+            conn = sqlite3.connect(uri, uri=True)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(f'SELECT * FROM users WHERE {where_sql}', params).fetchone()
+            conn.close()
+            if row:
+                return row
+        except Exception:
+            continue
+    return None
+
+
+def get_writable_user_db_connection():
+    global DB_PATH
+    try:
+        if PRIMARY_DB_PATH.exists():
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            fresh_path = BASE_DIR / f'cybersecurity_session_{stamp}.db'
+            fresh_path.write_bytes(PRIMARY_DB_PATH.read_bytes())
+            conn = sqlite3.connect(fresh_path)
+            conn.row_factory = sqlite3.Row
+            DB_PATH = fresh_path
+            return conn
+    except Exception:
+        pass
+
+    refresh_recovery_db_copy()
+    targets = [RECOVERY_DB_PATH, RUNTIME_DB_PATH]
+    last_error = None
+    for candidate in targets:
+        try:
+            conn = sqlite3.connect(candidate)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+            ).fetchone()
+            if row:
+                DB_PATH = candidate
+                return conn
+            conn.close()
+        except sqlite3.Error as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    raise sqlite3.OperationalError('No writable user database is available.')
+
+
+def update_user_password_via_subprocess(user_id, password_hash):
+    global DB_PATH
+    source_path = None
+    latest_session_dbs = sorted(
+        BASE_DIR.glob('cybersecurity_session_*.db'),
+        key=lambda item: item.stat().st_mtime if item.exists() else 0,
+        reverse=True,
+    )
+    for candidate in [DB_PATH] + latest_session_dbs + [PRIMARY_DB_PATH, RECOVERY_DB_PATH]:
+        try:
+            if candidate and Path(candidate).exists() and Path(candidate).stat().st_size > 0:
+                source_path = Path(candidate)
+                break
+        except Exception:
+            continue
+    if source_path is None:
+        raise sqlite3.OperationalError('No source user database is available.')
+
+    session_path = BASE_DIR / f'cybersecurity_session_{datetime.now().strftime("%Y%m%d_%H%M%S_%f")}.db'
+    script = (
+        "from pathlib import Path\n"
+        "import sqlite3, sys\n"
+        "src = Path(sys.argv[1])\n"
+        "dst = Path(sys.argv[2])\n"
+        "user_id = int(sys.argv[3])\n"
+        "password_hash = sys.argv[4]\n"
+        "dst.write_bytes(src.read_bytes())\n"
+        "conn = sqlite3.connect(dst)\n"
+        "conn.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash, user_id))\n"
+        "conn.commit()\n"
+        "conn.close()\n"
+    )
+    subprocess.run(
+        [sys.executable, '-c', script, str(source_path), str(session_path), str(int(user_id)), str(password_hash)],
+        check=True,
+        timeout=60,
+    )
+    DB_PATH = session_path
 
 
 def get_client_ip():
@@ -596,6 +807,682 @@ def read_image_upload(file_storage, required=False):
         'ext': detected_ext,
         'data': image_bytes,
         'mime_type': mime_map.get(detected_ext, 'application/octet-stream'),
+    }
+
+
+def ensure_local_face_db_dir():
+    LOCAL_FACE_DB_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_local_face_db_path(user_id):
+    ensure_local_face_db_dir()
+    return LOCAL_FACE_DB_DIR / f'user_{int(user_id)}.json'
+
+
+def load_local_face_records(user_id):
+    path = get_local_face_db_path(user_id)
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+        if isinstance(payload, list):
+            return [row for row in payload if isinstance(row, dict)]
+    except Exception:
+        return []
+    return []
+
+
+def save_local_face_records(user_id, records):
+    path = get_local_face_db_path(user_id)
+    ensure_local_face_db_dir()
+    path.write_text(json.dumps(list(records or []), ensure_ascii=True, indent=2), encoding='utf-8')
+
+
+def ensure_local_face_image_dir(user_id=None):
+    if user_id is None:
+        LOCAL_FACE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        return LOCAL_FACE_IMAGE_DIR
+    path = LOCAL_FACE_IMAGE_DIR / f'user_{int(user_id)}'
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_local_face_image_path(user_id, record_id, ext):
+    clean_ext = str(ext or 'jpg').lower()
+    if clean_ext == 'jpeg':
+        clean_ext = 'jpg'
+    if clean_ext not in {'png', 'jpg', 'webp'}:
+        clean_ext = 'jpg'
+    return ensure_local_face_image_dir(user_id) / f'{record_id}.{clean_ext}'
+
+
+def resolve_local_face_image_path(record):
+    raw_path = str((record or {}).get('image_path') or '').strip()
+    if not raw_path:
+        return None
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = BASE_DIR / candidate
+    try:
+        resolved = candidate.resolve()
+        base = BASE_DIR.resolve()
+        if str(resolved).startswith(str(base)) and resolved.exists():
+            return resolved
+    except Exception:
+        return None
+    return None
+
+
+def save_local_face_image(user_id, record_id, image_info):
+    path = get_local_face_image_path(user_id, record_id, image_info.get('ext') or 'jpg')
+    try:
+        path.write_bytes(image_info.get('data') or b'')
+    except Exception:
+        return ''
+    try:
+        return str(path.relative_to(BASE_DIR)).replace('\\', '/')
+    except Exception:
+        return str(path)
+
+
+def build_face_preview_data_url(image_bytes, max_size=(220, 220)):
+    if Image is None:
+        return ''
+    raw = image_bytes or b''
+    if not raw:
+        return ''
+    try:
+        image = Image.open(BytesIO(raw))
+        image = ImageOps.exif_transpose(image)
+        if image.mode not in {'RGB', 'L'}:
+            alpha = image.getchannel('A') if 'A' in image.getbands() else None
+            background = Image.new('RGB', image.size, (17, 24, 39))
+            background.paste(image.convert('RGBA'), mask=alpha)
+            image = background
+        else:
+            image = image.convert('RGB')
+        image.thumbnail(max_size, Image.Resampling.LANCZOS)
+        buffer = BytesIO()
+        image.save(buffer, format='JPEG', quality=84, optimize=True)
+        return 'data:image/jpeg;base64,' + base64.b64encode(buffer.getvalue()).decode('ascii')
+    except Exception:
+        return ''
+
+
+def read_saved_face_image_bytes(record):
+    path = resolve_local_face_image_path(record)
+    if path is None:
+        return b''
+    try:
+        return path.read_bytes()
+    except Exception:
+        return b''
+
+
+def get_local_face_record_preview(record):
+    return build_face_preview_data_url(read_saved_face_image_bytes(record))
+
+
+def ensure_face_query_dir(user_id=None):
+    if user_id is None:
+        FACE_QUERY_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        return FACE_QUERY_IMAGE_DIR
+    path = FACE_QUERY_IMAGE_DIR / f'user_{int(user_id)}'
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def archive_face_query_image(user_id, image_info):
+    archive_dir = ensure_face_query_dir(user_id)
+    ext = str(image_info.get('ext') or 'jpg').lower()
+    if ext == 'jpeg':
+        ext = 'jpg'
+    if ext not in {'png', 'jpg', 'webp'}:
+        ext = 'jpg'
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    filename = f'query_{stamp}.{ext}'
+    path = archive_dir / filename
+    try:
+        path.write_bytes(image_info.get('data') or b'')
+        return str(path.relative_to(BASE_DIR)).replace('\\', '/')
+    except Exception:
+        return ''
+
+
+def extract_face_model_vector(image_info, size=(64, 64)):
+    if Image is None or ImageOps is None:
+        return {'ok': False, 'message': 'Pillow image support is not available on this server.'}
+    if np is None:
+        return {'ok': False, 'message': 'NumPy support is not available on this server.'}
+    try:
+        image = Image.open(BytesIO(image_info.get('data') or b''))
+        image = ImageOps.exif_transpose(image).convert('L')
+        image = ImageOps.fit(image, size, method=Image.Resampling.LANCZOS)
+    except Exception:
+        return {'ok': False, 'message': 'Could not prepare the uploaded face image for trained matching.'}
+    vector = np.asarray(image, dtype=np.float32).reshape(1, -1) / 255.0
+    return {'ok': True, 'vector': vector}
+
+
+def get_trained_gallery_paths():
+    return {
+        'classifier': MODEL_DATA_DIR / 'lfw_identity_classifier.joblib',
+        'index': MODEL_DATA_DIR / 'lfw_identity_index.joblib',
+        'gallery': MODEL_DATA_DIR / 'lfw_identity_gallery.json',
+    }
+
+
+def get_emotion_model_path():
+    return MODEL_DATA_DIR / 'emotion_model.joblib'
+
+
+def is_emotion_model_enabled():
+    return bool(joblib is not None and get_emotion_model_path().exists())
+
+
+def load_emotion_model():
+    if joblib is None:
+        return {'ok': False, 'message': 'joblib is not available on this server.'}
+    path = get_emotion_model_path()
+    if not path.exists():
+        return {'ok': False, 'message': 'Emotion model file is not available yet.'}
+    try:
+        model = joblib.load(path)
+    except Exception:
+        return {'ok': False, 'message': 'Emotion model could not be loaded.'}
+    return {'ok': True, 'model': model}
+
+
+def predict_face_emotion(image_info):
+    if Image is None or ImageOps is None:
+        return {'ok': False, 'message': 'Pillow image support is not available on this server.'}
+    if np is None:
+        return {'ok': False, 'message': 'NumPy support is not available on this server.'}
+
+    model_info = load_emotion_model()
+    if not model_info.get('ok'):
+        return model_info
+
+    try:
+        image = Image.open(BytesIO(image_info.get('data') or b''))
+        image = ImageOps.exif_transpose(image).convert('L')
+        image = ImageOps.fit(image, (48, 48), method=Image.Resampling.LANCZOS)
+        vector = np.asarray(image, dtype=np.float32).reshape(1, -1) / 255.0
+    except Exception:
+        return {'ok': False, 'message': 'Could not prepare the face image for emotion prediction.'}
+
+    model = model_info.get('model')
+    try:
+        label = str(model.predict(vector)[0])
+        confidence = 0.0
+        if hasattr(model, 'predict_proba'):
+            try:
+                probs = model.predict_proba(vector)[0]
+                confidence = float(max(probs)) * 100.0 if len(probs) else 0.0
+            except Exception:
+                confidence = 0.0
+        display = label.replace('_', ' ').strip().title()
+        return {
+            'ok': True,
+            'label': label,
+            'display_label': display or 'Unknown',
+            'confidence': round(confidence, 2),
+            'message': f'Emotion looks closest to {display or "Unknown"}.',
+        }
+    except Exception:
+        return {'ok': False, 'message': 'Emotion prediction failed for this image.'}
+
+
+def is_trained_face_gallery_enabled():
+    paths = get_trained_gallery_paths()
+    return bool(joblib is not None and all(path.exists() for path in paths.values()))
+
+
+def load_trained_face_gallery():
+    if joblib is None:
+        return {'ok': False, 'message': 'joblib is not available on this server.'}
+    paths = get_trained_gallery_paths()
+    missing = [str(path.name) for path in paths.values() if not path.exists()]
+    if missing:
+        return {'ok': False, 'message': 'Trained gallery files are missing: ' + ', '.join(missing)}
+    try:
+        classifier = joblib.load(paths['classifier'])
+        index_bundle = joblib.load(paths['index'])
+        gallery = json.loads(paths['gallery'].read_text(encoding='utf-8'))
+    except Exception:
+        return {'ok': False, 'message': 'Trained face gallery files could not be loaded.'}
+    if not isinstance(gallery, list) or not gallery:
+        return {'ok': False, 'message': 'Trained face gallery is empty.'}
+    return {
+        'ok': True,
+        'classifier': classifier,
+        'index_bundle': index_bundle,
+        'gallery': gallery,
+    }
+
+
+def get_gallery_record_preview(gallery_item):
+    raw_path = str((gallery_item or {}).get('image_path') or '').strip()
+    if not raw_path:
+        return ''
+    path = BASE_DIR / raw_path
+    try:
+        return build_face_preview_data_url(path.read_bytes())
+    except Exception:
+        return ''
+
+
+def build_face_asset_url(raw_path):
+    clean_path = str(raw_path or '').strip()
+    if not clean_path:
+        return ''
+    try:
+        return url_for('face_intel_image_api', path=clean_path)
+    except Exception:
+        return ''
+
+
+def assess_face_image_quality(image_info):
+    if Image is None or ImageOps is None or ImageFilter is None or ImageStat is None:
+        return {'ok': False, 'message': 'Pillow image support is not available on this server.'}
+    if np is None:
+        return {'ok': False, 'message': 'NumPy support is not available on this server.'}
+
+    image_bytes = image_info.get('data') or b''
+    if not image_bytes:
+        return {'ok': False, 'message': 'Image file is required.'}
+
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        image = ImageOps.exif_transpose(image).convert('RGB')
+    except Exception:
+        return {'ok': False, 'message': 'The uploaded image could not be read properly. Please upload a clear JPG, PNG, or WebP photo.'}
+
+    width, height = image.size
+    if min(width, height) < 120:
+        return {'ok': False, 'message': 'Image is too small for reliable face matching. Please use a clearer photo and try again.'}
+
+    gray = image.convert('L')
+    gray_np = np.asarray(gray, dtype=np.float32)
+    contrast = float(gray_np.std())
+    brightness = float(gray_np.mean())
+
+    diff_x = np.abs(np.diff(gray_np, axis=1)).mean() if gray_np.shape[1] > 1 else 0.0
+    diff_y = np.abs(np.diff(gray_np, axis=0)).mean() if gray_np.shape[0] > 1 else 0.0
+    sharpness = float((diff_x + diff_y) / 2.0)
+
+    if contrast < 10 and sharpness < 2.2:
+        return {'ok': False, 'message': 'Face image looks blurry or very low detail. Please try again with a sharp front-facing photo.'}
+    if sharpness < 2.6:
+        return {'ok': False, 'message': 'Face image looks blurry. Please try again with a sharper photo.'}
+    if contrast < 12:
+        return {'ok': False, 'message': 'Face image has very low contrast. Please use better lighting and try again.'}
+    if brightness < 32:
+        return {'ok': False, 'message': 'Face image is too dark. Please use better lighting and try again.'}
+    if brightness > 235:
+        return {'ok': False, 'message': 'Face image is overexposed. Please reduce light glare and try again.'}
+
+    preview = build_face_preview_data_url(image_bytes)
+    return {
+        'ok': True,
+        'width': int(width),
+        'height': int(height),
+        'contrast': round(contrast, 2),
+        'sharpness': round(sharpness, 2),
+        'brightness': round(brightness, 2),
+        'preview': preview,
+    }
+
+
+def compute_local_face_fingerprint(image_info):
+    if Image is None or ImageOps is None:
+        return {'ok': False, 'message': 'Pillow image support is not available on this server.'}
+    if np is None:
+        return {'ok': False, 'message': 'NumPy support is not available on this server.'}
+
+    image_bytes = image_info.get('data') or b''
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        image = ImageOps.exif_transpose(image).convert('L')
+    except Exception:
+        # Fallback mode: use stable byte-level fingerprint when the image stream is damaged
+        # or encoded in a way Pillow cannot decode in this environment.
+        if not image_bytes:
+            return {'ok': False, 'message': 'Unable to read the uploaded image for local face matching.'}
+
+        digest = hashlib.sha256(image_bytes).digest()
+        repeated = (digest * ((256 // len(digest)) + 1))[:256]
+        vector = [round(byte / 255.0, 6) for byte in repeated]
+        bits = ''.join(format(byte, '08b') for byte in digest)
+        hist = np.histogram(np.frombuffer(image_bytes[: min(len(image_bytes), 4096)], dtype=np.uint8), bins=16, range=(0, 256))[0].astype(np.float32)
+        hist_sum = float(hist.sum() or 1.0)
+        hist = hist / hist_sum
+        return {
+            'ok': True,
+            'vector': vector,
+            'hash': bits[:64],
+            'hist': [round(float(v), 6) for v in hist.tolist()],
+            'image_size': [0, 0],
+            'fallback_mode': 'byte-fingerprint',
+        }
+
+    width, height = image.size
+    fitted = ImageOps.fit(image, (96, 96), method=Image.Resampling.LANCZOS, centering=(0.5, 0.42))
+    vec_img = fitted.resize((16, 16), Image.Resampling.LANCZOS)
+    hash_img = fitted.resize((9, 8), Image.Resampling.LANCZOS)
+
+    vector = (np.asarray(vec_img, dtype=np.float32) / 255.0).flatten()
+    hash_pixels = np.asarray(hash_img, dtype=np.float32)
+    hash_bits = (hash_pixels[:, 1:] > hash_pixels[:, :-1]).astype(np.uint8).flatten()
+
+    hist = np.histogram(np.asarray(fitted, dtype=np.float32), bins=16, range=(0, 256))[0].astype(np.float32)
+    hist_sum = float(hist.sum() or 1.0)
+    hist = hist / hist_sum
+
+    return {
+        'ok': True,
+        'vector': [round(float(v), 6) for v in vector.tolist()],
+        'hash': ''.join('1' if int(bit) else '0' for bit in hash_bits.tolist()),
+        'hist': [round(float(v), 6) for v in hist.tolist()],
+        'image_size': [int(width), int(height)],
+        'fallback_mode': '',
+    }
+
+
+def compare_local_face_fingerprints(saved_fingerprint, probe_fingerprint):
+    try:
+        saved_vector = np.asarray(saved_fingerprint.get('vector') or [], dtype=np.float32)
+        probe_vector = np.asarray(probe_fingerprint.get('vector') or [], dtype=np.float32)
+        saved_hist = np.asarray(saved_fingerprint.get('hist') or [], dtype=np.float32)
+        probe_hist = np.asarray(probe_fingerprint.get('hist') or [], dtype=np.float32)
+        saved_hash = str(saved_fingerprint.get('hash') or '')
+        probe_hash = str(probe_fingerprint.get('hash') or '')
+    except Exception:
+        return 0.0
+
+    if saved_vector.size == 0 or saved_vector.size != probe_vector.size:
+        return 0.0
+
+    vector_score = max(0.0, 1.0 - float(np.mean(np.abs(saved_vector - probe_vector))))
+    hist_score = 0.0
+    if saved_hist.size and saved_hist.size == probe_hist.size:
+        hist_score = max(0.0, 1.0 - float(np.abs(saved_hist - probe_hist).sum()) / 2.0)
+    hash_score = 0.0
+    if saved_hash and len(saved_hash) == len(probe_hash):
+        same = sum(1 for a, b in zip(saved_hash, probe_hash) if a == b)
+        hash_score = same / float(len(saved_hash))
+
+    return max(0.0, min(1.0, vector_score * 0.58 + hist_score * 0.18 + hash_score * 0.24))
+
+
+def get_local_face_records_summary(user_id):
+    records = load_local_face_records(user_id)
+    items = []
+    for record in records:
+        image_path = str(record.get('image_path') or '')
+        items.append(
+            {
+                'id': record.get('id') or '',
+                  'name': record.get('name') or 'Unnamed face',
+                  'filename': record.get('filename') or '',
+                  'created_at': record.get('created_at') or '',
+                  'preview': get_local_face_record_preview(record),
+                  'preview_url': build_face_asset_url(image_path),
+                  'image_path': image_path,
+              }
+          )
+    return {
+        'ok': True,
+        'count': len(items),
+        'items': items,
+    }
+
+
+def enroll_local_face_record(user_id, person_name, file_storage):
+    name = str(person_name or '').strip()
+    if len(name) < 2:
+        return {'ok': False, 'message': 'Enter a person name with at least 2 characters.'}
+
+    image_info = read_image_upload(file_storage, required=True)
+    if not image_info.get('ok'):
+        return {'ok': False, 'message': image_info.get('message', 'Invalid image upload.')}
+    quality = assess_face_image_quality(image_info)
+    if not quality.get('ok'):
+        return quality
+
+    fingerprint = compute_local_face_fingerprint(image_info)
+    if not fingerprint.get('ok'):
+        return fingerprint
+
+    records = load_local_face_records(user_id)
+    record_id = secrets.token_hex(8)
+    created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    stored_path = save_local_face_image(user_id, record_id, image_info)
+    records.append(
+        {
+            'id': record_id,
+            'name': name[:80],
+            'filename': image_info.get('filename') or 'image.jpg',
+            'created_at': created_at,
+            'image_path': stored_path,
+            'fingerprint': {
+                'vector': fingerprint.get('vector') or [],
+                'hash': fingerprint.get('hash') or '',
+                'hist': fingerprint.get('hist') or [],
+                'image_size': fingerprint.get('image_size') or [],
+            },
+        }
+    )
+    save_local_face_records(user_id, records)
+    return {
+        'ok': True,
+        'message': f'Known face saved for {name[:80]}.',
+        'record': {
+            'id': record_id,
+            'name': name[:80],
+            'filename': image_info.get('filename') or '',
+            'created_at': created_at,
+            'preview': quality.get('preview') or '',
+        },
+        'count': len(records),
+    }
+
+
+def delete_local_face_record(user_id, record_id):
+    rid = str(record_id or '').strip()
+    if not rid:
+        return {'ok': False, 'message': 'Face profile ID is required.'}
+
+    records = load_local_face_records(user_id)
+    removed = [record for record in records if str(record.get('id') or '') == rid]
+    kept = [record for record in records if str(record.get('id') or '') != rid]
+    if len(kept) == len(records):
+        return {'ok': False, 'message': 'Saved face profile not found.'}
+
+    for record in removed:
+        path = resolve_local_face_image_path(record)
+        if path is not None:
+            try:
+                path.unlink()
+            except Exception:
+                pass
+    save_local_face_records(user_id, kept)
+    return {
+        'ok': True,
+        'message': 'Saved face profile deleted successfully.',
+        'count': len(kept),
+    }
+
+
+def compare_local_face_database(user_id, file_storage):
+    image_info = read_image_upload(file_storage, required=True)
+    if not image_info.get('ok'):
+        return {'ok': False, 'message': image_info.get('message', 'Invalid image upload.')}
+    quality = assess_face_image_quality(image_info)
+    if not quality.get('ok'):
+        return quality
+
+    probe = compute_local_face_fingerprint(image_info)
+    if not probe.get('ok'):
+        return probe
+    emotion = predict_face_emotion(image_info)
+    query_preview = quality.get('preview') or build_face_preview_data_url(image_info.get('data'))
+    archived_query = archive_face_query_image(user_id, image_info)
+
+    records = load_local_face_records(user_id)
+    if not records:
+        return {
+            'ok': True,
+            'status': 'WARNING',
+            'score': 52,
+            'message': 'No saved faces are available yet. Save at least one known face first.',
+            'matches': [],
+            'findings': ['Local face database is empty.', 'Save a known face and then compare a new upload.'],
+            'db_count': 0,
+            'mode': 'local-face-db',
+            'query_preview': query_preview,
+            'query_saved_path': archived_query,
+            'query_label': 'Your Pic',
+            'match_label': 'Matching Pic',
+            'emotion': emotion if emotion.get('ok') else {},
+        }
+
+    matches = []
+    for record in records:
+        fingerprint = record.get('fingerprint') or {}
+        similarity = compare_local_face_fingerprints(fingerprint, probe)
+        matches.append(
+            {
+                'id': record.get('id') or '',
+                  'name': record.get('name') or 'Unnamed face',
+                'filename': record.get('filename') or '',
+                'created_at': record.get('created_at') or '',
+                'score': round(similarity * 100, 2),
+                'preview': get_local_face_record_preview(record),
+                'image_path': str(record.get('image_path') or ''),
+                'preview_url': build_face_asset_url(record.get('image_path') or ''),
+                'source': 'local-db',
+            }
+        )
+
+    matches.sort(key=lambda item: item.get('score', 0), reverse=True)
+    top_score = float(matches[0].get('score', 0) if matches else 0)
+    if top_score >= 88:
+        status = 'SAFE'
+        score = max(6, int(round(100 - top_score)))
+        message = f'Strong local face match found: {matches[0]["name"]}.'
+    elif top_score >= 75:
+        status = 'WARNING'
+        score = 32
+        message = f'Possible local face match found: {matches[0]["name"]}. Review manually.'
+    else:
+        status = 'WARNING'
+        score = 58
+        message = 'No strong saved-face match was found in the local database.'
+
+    findings = [f'{item["name"]}: {item["score"]}% similarity' for item in matches[:5]]
+    findings.append(f'Compared against {len(records)} saved face profile(s).')
+    findings.append('Local matching works best with a single centered face and similar lighting.')
+
+    return {
+        'ok': True,
+        'status': status,
+        'score': score,
+        'message': message,
+        'matches': matches[:10],
+        'top_match': matches[0] if matches else {},
+        'findings': findings,
+        'db_count': len(records),
+        'mode': 'local-face-db',
+        'query_preview': query_preview,
+        'query_saved_path': archived_query,
+        'query_label': 'Your Pic',
+        'match_label': 'Matching Pic',
+        'emotion': emotion if emotion.get('ok') else {},
+    }
+
+
+def compare_trained_face_gallery(user_id, file_storage):
+    image_info = read_image_upload(file_storage, required=True)
+    if not image_info.get('ok'):
+        return {'ok': False, 'message': image_info.get('message', 'Invalid image upload.')}
+    quality = assess_face_image_quality(image_info)
+    if not quality.get('ok'):
+        return quality
+
+    assets = load_trained_face_gallery()
+    if not assets.get('ok'):
+        return assets
+
+    vector_info = extract_face_model_vector(image_info, size=(64, 64))
+    if not vector_info.get('ok'):
+        return vector_info
+    emotion = predict_face_emotion(image_info)
+
+    index_bundle = assets.get('index_bundle') or {}
+    scaler = index_bundle.get('scaler')
+    pca = index_bundle.get('pca')
+    index = index_bundle.get('index')
+    gallery = assets.get('gallery') or []
+    if scaler is None or pca is None or index is None:
+        return {'ok': False, 'message': 'Trained gallery index is incomplete.'}
+
+    try:
+        projected = pca.transform(scaler.transform(vector_info.get('vector')))
+        distances, indices = index.kneighbors(projected, n_neighbors=min(3, len(gallery)))
+    except Exception:
+        return {'ok': False, 'message': 'Trained gallery comparison failed.'}
+
+    query_preview = quality.get('preview') or build_face_preview_data_url(image_info.get('data'))
+    matches = []
+    for dist, idx in zip(distances[0].tolist(), indices[0].tolist()):
+        if idx < 0 or idx >= len(gallery):
+            continue
+        item = gallery[idx] or {}
+        similarity = max(0.0, min(100.0, (1.0 - float(dist)) * 100.0))
+        matches.append(
+            {
+                'id': f'gallery-{idx}',
+                'name': str(item.get('person') or 'Unknown person'),
+                'filename': Path(str(item.get('image_path') or '')).name,
+                'score': round(similarity, 2),
+                'preview': get_gallery_record_preview(item),
+                'image_path': str(item.get('image_path') or ''),
+                'preview_url': build_face_asset_url(item.get('image_path') or ''),
+                'source': 'trained-gallery',
+            }
+        )
+
+    top_score = float(matches[0].get('score', 0) if matches else 0)
+    if top_score >= 75:
+        status = 'SAFE'
+        score = max(8, int(round(100 - top_score)))
+        message = f'Trained gallery found a strong identity match: {matches[0]["name"]}.'
+    elif top_score >= 55:
+        status = 'WARNING'
+        score = 36
+        message = f'Trained gallery found a possible identity match: {matches[0]["name"]}. Review manually.'
+    else:
+        status = 'WARNING'
+        score = 60
+        message = 'No strong trained-gallery match was found for this face.'
+
+    findings = [f'{item["name"]}: {item["score"]}% gallery similarity' for item in matches]
+    findings.append(f'Compared against {len(gallery)} trained gallery images.')
+    return {
+        'ok': True,
+        'status': status,
+        'score': score,
+        'message': message,
+        'matches': matches,
+        'top_match': matches[0] if matches else {},
+        'findings': findings,
+        'db_count': len(gallery),
+        'mode': 'trained-gallery',
+        'query_preview': query_preview,
+        'query_label': 'Your Pic',
+        'match_label': 'Matching Pic',
+        'emotion': emotion if emotion.get('ok') else {},
     }
 
 
@@ -833,6 +1720,63 @@ def build_password_code(channel):
     return {'code': code, 'salt': salt, 'hash': hashed, 'channel': channel}
 
 
+def is_smtp_enabled():
+    if not (SMTP_HOST and SMTP_FROM_EMAIL and SMTP_USERNAME and SMTP_PASSWORD):
+        return False
+    blocked_tokens = {'yourgmail@gmail.com', 'replace_with_app_password', 'placeholder', 'changeme'}
+    username = SMTP_USERNAME.strip().lower()
+    from_email = SMTP_FROM_EMAIL.strip().lower()
+    password = SMTP_PASSWORD.strip().lower()
+    if username in blocked_tokens or from_email in blocked_tokens:
+        return False
+    if any(token in password for token in blocked_tokens):
+        return False
+    return True
+
+
+def send_email_message(to_email, subject, body_text):
+    if not is_smtp_enabled():
+        return False, 'SMTP email delivery is not configured.'
+
+    message = EmailMessage()
+    message['Subject'] = subject
+    message['From'] = SMTP_FROM_EMAIL
+    message['To'] = str(to_email or '').strip().lower()
+    message.set_content(body_text)
+
+    try:
+        if SMTP_USE_SSL:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as server:
+                if SMTP_USERNAME:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(message)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+                server.ehlo()
+                if SMTP_USE_TLS:
+                    context = ssl.create_default_context()
+                    server.starttls(context=context)
+                    server.ehlo()
+                if SMTP_USERNAME:
+                    server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.send_message(message)
+        return True, ''
+    except Exception as exc:
+        return False, f'Email delivery failed: {str(exc)[:160]}'
+
+
+def build_password_reset_email_body(name, code):
+    display_name = str(name or 'User').strip() or 'User'
+    return (
+        f'Hello {display_name},\n\n'
+        f'Your {APP_BRAND_NAME} password reset code is: {code}\n\n'
+        'This code will expire in 10 minutes. If you did not request this change, '
+        'please ignore this message and review your account security.\n\n'
+        f'- {APP_BRAND_NAME}'
+    )
+
+
 def _b64url_encode(data):
     return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
 
@@ -1002,6 +1946,38 @@ def is_stripe_enabled():
 
 def is_facecheck_enabled():
     return bool(requests is not None and is_real_config_value(FACECHECK_API_TOKEN))
+
+
+def resolve_optional_file_path(raw_value):
+    value = str(raw_value or '').strip()
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return path if path.exists() and path.is_file() else None
+
+
+def get_google_vision_credentials_path():
+    direct_path = resolve_optional_file_path(GOOGLE_APPLICATION_CREDENTIALS_PATH)
+    if direct_path is not None:
+        return direct_path
+
+    fallback_candidates = [
+        BASE_DIR / 'google-service-account.json',
+        BASE_DIR / 'service-account.json',
+        BASE_DIR / 'google-vision-key.json',
+        BASE_DIR / 'credentials' / 'google-service-account.json',
+        BASE_DIR / 'credentials' / 'service-account.json',
+    ]
+    for path in fallback_candidates:
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def is_google_vision_enabled():
+    return bool(google_cloud_vision is not None and get_google_vision_credentials_path() is not None)
 
 
 def is_ubl_payout_configured():
@@ -1259,24 +2235,33 @@ def init_db():
 
 
 def get_user_by_email(email):
-    conn = get_db_connection()
-    user = conn.execute('SELECT * FROM users WHERE email = ?', (email.lower().strip(),)).fetchone()
-    conn.close()
-    return user
+    try:
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email.lower().strip(),)).fetchone()
+        conn.close()
+        return user
+    except sqlite3.Error:
+        return get_snapshot_user_row('email = ?', (email.lower().strip(),))
 
 
 def get_user_by_phone(phone):
-    conn = get_db_connection()
-    user = conn.execute('SELECT * FROM users WHERE phone = ?', (normalize_phone(phone),)).fetchone()
-    conn.close()
-    return user
+    try:
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE phone = ?', (normalize_phone(phone),)).fetchone()
+        conn.close()
+        return user
+    except sqlite3.Error:
+        return get_snapshot_user_row('phone = ?', (normalize_phone(phone),))
 
 
 def get_user_by_id(user_id):
-    conn = get_db_connection()
-    user = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
-    conn.close()
-    return user
+    try:
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+        conn.close()
+        return user
+    except sqlite3.Error:
+        return get_snapshot_user_row('id = ?', (user_id,))
 
 
 def get_user_by_identifier(identifier):
@@ -1531,15 +2516,38 @@ def update_user_profile(user_id, name, email, phone, profile_image=None):
 
 
 def update_user_password(user_id, new_password):
-    conn = get_db_connection()
+    password_hash = generate_password_hash(str(new_password))
     try:
+        conn = get_db_connection()
         conn.execute(
             'UPDATE users SET password_hash = ? WHERE id = ?',
-            (generate_password_hash(str(new_password)), int(user_id)),
+            (password_hash, int(user_id)),
         )
         conn.commit()
-    finally:
         conn.close()
+        return
+    except sqlite3.Error:
+        pass
+
+    try:
+        conn = get_writable_user_db_connection()
+        try:
+            conn.execute(
+                'UPDATE users SET password_hash = ? WHERE id = ?',
+                (password_hash, int(user_id)),
+            )
+            conn.commit()
+            return
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+
+    try:
+        update_user_password_via_subprocess(int(user_id), password_hash)
+        return
+    except Exception:
+        raise
 
 
 def login_required(view_fn):
@@ -1564,13 +2572,24 @@ def api_login_required(view_fn):
 
 
 def get_patterns_by_type(pattern_type):
-    conn = get_db_connection()
-    rows = conn.execute(
-        'SELECT pattern_text, threat_level FROM threat_patterns WHERE pattern_type = ?',
-        (pattern_type,),
-    ).fetchall()
-    conn.close()
-    return rows
+    conn = None
+    try:
+        conn = get_db_connection()
+        rows = conn.execute(
+            'SELECT pattern_text, threat_level FROM threat_patterns WHERE pattern_type = ?',
+            (pattern_type,),
+        ).fetchall()
+        if rows:
+            return rows
+    except Exception:
+        pass
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+    return list(FALLBACK_THREAT_PATTERNS.get(str(pattern_type or '').strip().lower(), []))
 
 
 def build_breach_safety_notes(breach_count, mode, domain, status):
@@ -1918,32 +2937,55 @@ def parse_port_list(port_input):
 def validate_scan_target(host):
     target = (host or '').strip()
     if not target:
-        return False, 'Host is required.', ''
+        return False, 'Host is required.', '', None
 
     if target.lower() in {'localhost', 'localhost.localdomain'}:
-        return False, 'Localhost scanning is blocked for safety.', ''
+        return False, 'Localhost scanning is blocked for safety.', '', None
 
     try:
         infos = socket.getaddrinfo(target, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        ips = sorted({info[4][0] for info in infos if info and info[4]})
+        candidates = []
+        seen = set()
+        for info in infos:
+            if not info or not info[4]:
+                continue
+            family = info[0]
+            ip_text = info[4][0]
+            key = (family, ip_text)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append({'family': family, 'ip': ip_text})
     except Exception:
-        return False, 'Could not resolve host.', ''
+        return False, 'Could not resolve host.', '', None
 
-    if not ips:
-        return False, 'Could not resolve host.', ''
+    if not candidates:
+        return False, 'Could not resolve host.', '', None
 
-    for ip_text in ips:
+    allowed_candidates = []
+    for item in candidates:
+        ip_text = item['ip']
         ip_obj = ipaddress.ip_address(ip_text)
         if is_disallowed_ip_address(ip_obj):
-            return False, 'Target resolves to private/internal address. Scan blocked for safety.', ''
+            return False, 'Target resolves to private/internal address. Scan blocked for safety.', '', None
+        allowed_candidates.append(item)
 
-    return True, '', ips[0]
+    preferred = None
+    for item in allowed_candidates:
+        if item['family'] == socket.AF_INET:
+            preferred = item
+            break
+    if preferred is None and allowed_candidates:
+        preferred = allowed_candidates[0]
+    if preferred is None:
+        return False, 'Could not resolve host.', '', None
+    return True, '', preferred['ip'], preferred['family']
 
 
 def run_port_scan(host, ports):
     results = []
     open_ports = []
-    is_allowed, reason, resolved_ip = validate_scan_target(host)
+    is_allowed, reason, resolved_ip, address_family = validate_scan_target(host)
     if not is_allowed:
         return {
             'ok': False,
@@ -1956,10 +2998,13 @@ def run_port_scan(host, ports):
 
     for port in ports:
         is_open = False
+        sock = None
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            family = address_family or socket.AF_INET
+            sock = socket.socket(family, socket.SOCK_STREAM)
             sock.settimeout(0.45)
-            code = sock.connect_ex((resolved_ip, int(port)))
+            target_addr = (resolved_ip, int(port), 0, 0) if family == socket.AF_INET6 else (resolved_ip, int(port))
+            code = sock.connect_ex(target_addr)
             is_open = code == 0
         except Exception:
             is_open = False
@@ -2471,32 +3516,200 @@ def generate_assistant_reply(history, user_message):
     return generate_free_chatbot_reply(history, user_message)
 
 
-def run_facecheck_search(file_storage):
-    image_info = read_image_upload(file_storage, required=True)
-    if not image_info.get('ok'):
-        return {'ok': False, 'message': image_info.get('message', 'Invalid image upload.')}
+def get_face_status_rank(status):
+    mapping = {'SAFE': 0, 'WARNING': 1, 'DANGEROUS': 2}
+    return mapping.get(str(status or '').strip().upper(), 0)
 
+
+def merge_face_findings(*collections):
+    seen = set()
+    merged = []
+    for collection in collections:
+        for item in collection or []:
+            text = str(item or '').strip()
+            if text and text not in seen:
+                seen.add(text)
+                merged.append(text)
+    return merged
+
+
+def get_google_vision_client():
+    if google_cloud_vision is None:
+        return None, 'Google Vision library is not installed.'
+
+    creds_path = get_google_vision_credentials_path()
+    try:
+        if creds_path is not None:
+            return google_cloud_vision.ImageAnnotatorClient.from_service_account_file(str(creds_path)), ''
+        return google_cloud_vision.ImageAnnotatorClient(), ''
+    except Exception as exc:
+        message = str(exc).lower()
+        if 'default credentials' in message or 'credentials' in message or 'permission denied' in message:
+            return None, 'Google Vision credentials are not configured correctly.'
+        return None, 'Google Vision client could not be initialized.'
+
+
+def google_vision_likelihood_label(value):
+    labels = {
+        0: 'UNKNOWN',
+        1: 'VERY_UNLIKELY',
+        2: 'UNLIKELY',
+        3: 'POSSIBLE',
+        4: 'LIKELY',
+        5: 'VERY_LIKELY',
+    }
+    try:
+        return labels.get(int(value), 'UNKNOWN')
+    except Exception:
+        return 'UNKNOWN'
+
+
+def run_google_vision_face_analysis(image_info):
+    client, client_error = get_google_vision_client()
+    if client is None:
+        return {'ok': False, 'message': client_error}
+
+    image_bytes = image_info.get('data') or b''
+    try:
+        image = google_cloud_vision.Image(content=image_bytes)
+        response = client.face_detection(image=image, max_results=5)
+    except Exception as exc:
+        message = str(exc).lower()
+        raw_message = str(exc).strip()
+        if 'service_disabled' in message or 'has not been used in project' in message or 'vision api' in message:
+            return {'ok': False, 'message': raw_message[:220]}
+        if 'permission denied' in message or 'credentials' in message or 'authentication' in message:
+            return {'ok': False, 'message': 'Google Vision credentials were rejected by the API.'}
+        return {'ok': False, 'message': 'Google Vision face analysis failed.'}
+
+    api_error = getattr(getattr(response, 'error', None), 'message', '')
+    if api_error:
+        return {'ok': False, 'message': f'Google Vision API error: {str(api_error)[:160]}'}
+
+    faces = list(getattr(response, 'face_annotations', []) or [])
+    if not faces:
+        return {
+            'ok': True,
+            'status': 'SAFE',
+            'score': 8,
+            'message': 'No clear face was detected in the uploaded image.',
+            'matches': [],
+            'findings': [
+                'Google Vision did not detect a clear face in this image.',
+                'Try a front-facing image with better lighting and less blur.',
+            ],
+            'mode': 'google-vision',
+            'search_url': 'https://cloud.google.com/vision',
+        }
+
+    top_face = faces[0]
+    face_count = len(faces)
+    detection_confidence = float(getattr(top_face, 'detection_confidence', 0) or 0)
+    landmark_confidence = float(getattr(top_face, 'landmarking_confidence', 0) or 0)
+    blurred_likelihood = int(getattr(top_face, 'blurred_likelihood', 0) or 0)
+    underexposed_likelihood = int(getattr(top_face, 'under_exposed_likelihood', 0) or 0)
+    headwear_likelihood = int(getattr(top_face, 'headwear_likelihood', 0) or 0)
+    pan_angle = float(getattr(top_face, 'pan_angle', 0) or 0)
+    tilt_angle = float(getattr(top_face, 'tilt_angle', 0) or 0)
+    roll_angle = float(getattr(top_face, 'roll_angle', 0) or 0)
+
+    score = 12
+    findings = [
+        f'Google Vision detected {face_count} face(s).',
+        f'Detection confidence: {round(detection_confidence * 100, 1)}%',
+        f'Landmark confidence: {round(landmark_confidence * 100, 1)}%',
+        f'Blur likelihood: {google_vision_likelihood_label(blurred_likelihood)}.',
+        f'Exposure likelihood: {google_vision_likelihood_label(underexposed_likelihood)}.',
+    ]
+
+    if face_count > 1:
+        score += 22
+        findings.append('Multiple faces detected. Use one clear face for better recognition accuracy.')
+    if detection_confidence < 0.55:
+        score += 28
+        findings.append('Face confidence is low, so recognition quality may be weak.')
+    elif detection_confidence < 0.8:
+        score += 12
+        findings.append('Face confidence is moderate; a clearer image would help.')
+    if landmark_confidence < 0.5:
+        score += 10
+        findings.append('Facial landmarks are weak, so feature extraction may be limited.')
+    if blurred_likelihood >= 4:
+        score += 24
+        findings.append('Image appears heavily blurred.')
+    elif blurred_likelihood >= 3:
+        score += 12
+        findings.append('Some blur was detected in the image.')
+    if underexposed_likelihood >= 4:
+        score += 18
+        findings.append('Image appears dark or underexposed.')
+    elif underexposed_likelihood >= 3:
+        score += 8
+        findings.append('Lighting may be too low for best accuracy.')
+    if abs(pan_angle) > 20 or abs(tilt_angle) > 15 or abs(roll_angle) > 15:
+        score += 12
+        findings.append('Face angle is tilted or turned, which may reduce matching quality.')
+    if headwear_likelihood >= 4:
+        score += 8
+        findings.append('Headwear may cover important facial features.')
+
+    score = max(0, min(100, int(score)))
+    status = 'SAFE' if score < 30 else ('WARNING' if score < 70 else 'DANGEROUS')
+    if face_count > 1:
+        message = 'Multiple faces detected. Use a single clear face image for best recognition.'
+    elif status == 'SAFE':
+        message = 'Face detected successfully with Google Vision.'
+    else:
+        message = 'Face detected, but image quality or angle may reduce recognition accuracy.'
+
+    return {
+        'ok': True,
+        'status': status,
+        'score': score,
+        'message': message,
+        'matches': [],
+        'findings': findings,
+        'mode': 'google-vision',
+        'search_url': 'https://cloud.google.com/vision',
+    }
+
+
+def build_facecheck_fallback_result(image_bytes, message, status='WARNING', score=28):
+    digest = hashlib.sha256(image_bytes or b'').hexdigest()[:12]
+    return {
+        'ok': True,
+        'status': status,
+        'score': int(score),
+        'message': message,
+        'matches': [],
+        'findings': [
+            f'Image fingerprint: {digest}',
+            'Live public face search is not available in the current server setup.',
+            'Add a real FACECHECK_API_TOKEN to enable live web matching.',
+        ],
+        'id_search': f'offline-{digest}',
+        'search_url': FACECHECK_BASE_URL,
+        'mode': 'offline',
+    }
+
+
+def run_facecheck_search_from_image_info(image_info):
     filename = image_info.get('filename') or 'image.jpg'
     mime_type = image_info.get('mime_type') or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
     image_bytes = image_info.get('data') or b''
 
-    if (requests is None or not FACECHECK_API_TOKEN) and FACECHECK_DEMO:
-        digest = hashlib.sha256(image_bytes).hexdigest()[:12]
-        return {
-            'ok': True,
-            'status': 'WARNING',
-            'score': 35,
-            'message': 'FaceCheck live token missing. Demo mode active; live internet search not performed.',
-            'matches': [],
-            'findings': [f'Demo fingerprint: {digest}', 'Set FACECHECK_API_TOKEN for live face search.'],
-            'id_search': f'demo-{digest}',
-            'search_url': FACECHECK_BASE_URL,
-        }
-
     if requests is None:
-        return {'ok': False, 'message': 'requests library missing. Install requirements first.'}
-    if not FACECHECK_API_TOKEN:
-        return {'ok': False, 'message': 'FaceCheck API token missing. Set FACECHECK_API_TOKEN in server env.'}
+        return build_facecheck_fallback_result(
+            image_bytes,
+            'Face scan is running in offline preview mode because the requests library is not available.',
+            score=25,
+        )
+    if not is_real_config_value(FACECHECK_API_TOKEN):
+        return build_facecheck_fallback_result(
+            image_bytes,
+            'Face scan is running in offline preview mode because the live API token is not configured.',
+            score=25,
+        )
 
     headers = {'accept': 'application/json', 'Authorization': FACECHECK_API_TOKEN}
     try:
@@ -2510,11 +3723,17 @@ def run_facecheck_search(file_storage):
         upload_resp.raise_for_status()
         upload_data = upload_resp.json()
     except Exception:
-        return {'ok': False, 'message': 'FaceCheck upload failed. Verify token/network and try again.'}
+        return build_facecheck_fallback_result(
+            image_bytes,
+            'Live face search is temporarily unavailable. Offline preview mode is active right now.',
+        )
 
     id_search = str(upload_data.get('id_search', '')).strip()
     if not id_search:
-        return {'ok': False, 'message': upload_data.get('error') or 'FaceCheck did not return a valid search ID.'}
+        return build_facecheck_fallback_result(
+            image_bytes,
+            upload_data.get('error') or 'Live face search did not return a valid search ID. Offline preview mode is active.',
+        )
 
     search_payload = {
         'id_search': id_search,
@@ -2537,7 +3756,10 @@ def run_facecheck_search(file_storage):
             search_resp.raise_for_status()
             search_data = search_resp.json()
         except Exception:
-            return {'ok': False, 'message': 'FaceCheck search request failed during polling.'}
+            return build_facecheck_fallback_result(
+                image_bytes,
+                'Live face search could not finish right now. Offline preview mode is active.',
+            )
 
         if search_data.get('error'):
             error_message = str(search_data.get('error'))
@@ -2557,7 +3779,10 @@ def run_facecheck_search(file_storage):
         time.sleep(1)
 
     if error_message:
-        return {'ok': False, 'message': error_message}
+        return build_facecheck_fallback_result(
+            image_bytes,
+            f'{error_message} Offline preview mode is active instead.',
+        )
 
     matches = []
     top_score = 0
@@ -2601,7 +3826,63 @@ def run_facecheck_search(file_storage):
         'findings': findings,
         'id_search': id_search,
         'search_url': f'{FACECHECK_BASE_URL}',
+        'mode': 'facecheck-live',
     }
+
+
+def merge_face_intel_results(vision_result, facecheck_result):
+    if not vision_result.get('ok'):
+        return facecheck_result
+    if not facecheck_result.get('ok'):
+        return vision_result
+
+    score = max(int(vision_result.get('score', 0)), int(facecheck_result.get('score', 0)))
+    status = vision_result.get('status', 'SAFE')
+    if get_face_status_rank(facecheck_result.get('status')) > get_face_status_rank(status):
+        status = facecheck_result.get('status', 'SAFE')
+
+    merged = dict(vision_result)
+    merged['score'] = score
+    merged['status'] = status
+    merged['matches'] = list(facecheck_result.get('matches') or [])
+    merged['findings'] = merge_face_findings(vision_result.get('findings'), facecheck_result.get('findings'))
+    merged['search_url'] = facecheck_result.get('search_url') or vision_result.get('search_url') or ''
+
+    facecheck_mode = str(facecheck_result.get('mode') or '')
+    if facecheck_mode == 'facecheck-live':
+        merged['mode'] = 'hybrid'
+        if merged['matches']:
+            merged['message'] = 'Google Vision face analysis and public web match search completed.'
+        else:
+            merged['message'] = 'Google Vision analysis completed. No public web matches were found.'
+    else:
+        merged['mode'] = 'google-vision'
+        merged['message'] = vision_result.get('message') or 'Google Vision face analysis completed.'
+        merged['findings'] = merge_face_findings(
+            vision_result.get('findings'),
+            ['Public web match search is not active right now. Add FACECHECK_API_TOKEN to enable it.'],
+            facecheck_result.get('findings'),
+        )
+
+    return merged
+
+
+def run_facecheck_search(file_storage):
+    image_info = read_image_upload(file_storage, required=True)
+    if not image_info.get('ok'):
+        return {'ok': False, 'message': image_info.get('message', 'Invalid image upload.')}
+
+    vision_result = run_google_vision_face_analysis(image_info)
+    facecheck_result = run_facecheck_search_from_image_info(image_info)
+
+    if vision_result.get('ok'):
+        return merge_face_intel_results(vision_result, facecheck_result)
+    if facecheck_result.get('ok'):
+        facecheck_result['findings'] = merge_face_findings(
+            [vision_result.get('message')],
+            facecheck_result.get('findings'),
+        )
+    return facecheck_result
 
 
 def save_scan_report(user_id, input_text, input_type, score, status, threats):
@@ -2788,6 +4069,94 @@ def get_settings_dict(user_id):
     }
 
 
+def build_reports_pdf_bytes(user_id, report_filter='all', keyword=''):
+    reports = get_scan_reports(int(user_id), report_filter, keyword)
+    if Image is None or ImageDraw is None:
+        raise RuntimeError('Pillow is required to export reports PDF.')
+
+    page_width, page_height = 1240, 1754
+    margin_x = 72
+    margin_y = 72
+    line_gap = 14
+    pages = []
+    font = ImageFont.load_default() if ImageFont is not None else None
+
+    def new_page():
+        img = Image.new('RGB', (page_width, page_height), '#ffffff')
+        draw = ImageDraw.Draw(img)
+        y = margin_y
+        header = f'{APP_BRAND_NAME} - Security Reports'
+        subheader = f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Filter: {report_filter} | Search: {keyword or "all"}'
+        draw.text((margin_x, y), header, fill='#111827', font=font)
+        y += 28
+        draw.text((margin_x, y), subheader, fill='#4b5563', font=font)
+        y += 36
+        return img, draw, y
+
+    def wrap_text(draw, text, max_width):
+        value = str(text or '').strip()
+        if not value:
+            return ['']
+        words = value.split()
+        lines = []
+        current = ''
+        for word in words:
+            test = word if not current else current + ' ' + word
+            width = draw.textbbox((0, 0), test, font=font)[2]
+            if width <= max_width:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines or ['']
+
+    img, draw, y = new_page()
+    if not reports:
+        draw.text((margin_x, y), 'No reports found for the selected filter.', fill='#111827', font=font)
+        y += 24
+        draw.text((margin_x, y), 'Run any scan first, then export again.', fill='#4b5563', font=font)
+        pages.append(img)
+    else:
+        for index, report in enumerate(reports, start=1):
+            threat_lines = report.get('threats') or []
+            block_lines = [
+                f'{index}. {str(report.get("input_type", "")).upper()} | {report.get("status", "SAFE")} | {int(report.get("score", 0))}%'
+            ]
+            block_lines.extend(wrap_text(draw, f'Input: {report.get("input_text", "")}', page_width - (margin_x * 2)))
+            block_lines.append(f'Time: {report.get("created_at", "")}')
+            if threat_lines:
+                block_lines.append('Findings:')
+                for item in threat_lines[:6]:
+                    block_lines.extend(['- ' + line for line in wrap_text(draw, item, page_width - (margin_x * 2) - 18)])
+            else:
+                block_lines.append('Findings: No findings stored for this report.')
+
+            estimated_height = 18 + (len(block_lines) * line_gap) + 18
+            if y + estimated_height > page_height - margin_y:
+                pages.append(img)
+                img, draw, y = new_page()
+
+            for idx, line in enumerate(block_lines):
+                fill = '#111827' if idx == 0 else '#374151'
+                draw.text((margin_x, y), line, fill=fill, font=font)
+                y += line_gap
+
+            draw.line((margin_x, y + 4, page_width - margin_x, y + 4), fill='#d1d5db', width=1)
+            y += 22
+
+        pages.append(img)
+
+    pdf_io = BytesIO()
+    rgb_pages = [page.convert('RGB') for page in pages]
+    first, rest = rgb_pages[0], rgb_pages[1:]
+    first.save(pdf_io, format='PDF', save_all=True, append_images=rest)
+    pdf_io.seek(0)
+    return pdf_io
+
+
 def calculate_threat_score(input_text, input_type):
     score = 0
     threats = []
@@ -2803,18 +4172,48 @@ def calculate_threat_score(input_text, input_type):
                 threats.append(f'Malicious command detected: {pattern}')
 
     elif input_type == 'password':
-        if len(text) < 8:
-            score += 30
-            threats.append('Password is too short (minimum 8 characters).')
-        if re.search(r'[a-z]', text) is None:
-            score += 20
+        length = len(text)
+        unique_chars = len(set(text))
+        has_lower = re.search(r'[a-z]', text) is not None
+        has_upper = re.search(r'[A-Z]', text) is not None
+        has_digit = re.search(r'\d', text) is not None
+        has_symbol = re.search(r'[^A-Za-z0-9]', text) is not None
+
+        if length < 8:
+            score += 45
+            threats.append('Password is too short (use at least 8 characters).')
+        elif length < 12:
+            score += 22
+            threats.append('Password is short for modern security standards.')
+        elif length < 16:
+            score += 8
+            threats.append('Longer passwords are safer. Aim for 16+ characters if possible.')
+
+        if not has_lower:
+            score += 18
             threats.append('Missing lowercase letter.')
-        if re.search(r'[A-Z]', text) is None:
-            score += 20
+        if not has_upper:
+            score += 18
             threats.append('Missing uppercase letter.')
-        if re.search(r'\d', text) is None:
-            score += 20
+        if not has_digit:
+            score += 18
             threats.append('Missing number.')
+        if not has_symbol:
+            score += 14
+            threats.append('Missing symbol or special character.')
+
+        if unique_chars <= max(4, length // 3):
+            score += 14
+            threats.append('Too many repeated characters reduce password strength.')
+        if re.search(r'(.)\1{2,}', text):
+            score += 18
+            threats.append('Repeated character sequence detected.')
+        if re.search(r'(0123|1234|2345|3456|4567|5678|6789|abcd|qwer|asdf|zxcv)', normalized):
+            score += 20
+            threats.append('Sequential keyboard or number pattern detected.')
+        if re.search(r'(19|20)\d{2}', normalized) and (length < 16 or not (has_lower and has_upper and has_digit and has_symbol)):
+            score += 10
+            threats.append('Year-style pattern detected; avoid predictable dates.')
 
         for row in get_patterns_by_type('password'):
             pattern = row['pattern_text']
@@ -2822,6 +4221,11 @@ def calculate_threat_score(input_text, input_type):
             if pattern.lower() in normalized:
                 score += level
                 threats.append(f'Common weak password pattern: {pattern}')
+
+        if length >= 16 and has_lower and has_upper and has_digit and has_symbol and unique_chars >= min(length - 2, 10):
+            score = max(0, score - 18)
+        elif length >= 12 and has_lower and has_upper and has_digit and has_symbol:
+            score = max(0, score - 8)
 
     elif input_type == 'url':
         for row in get_patterns_by_type('url'):
@@ -2906,8 +4310,8 @@ def apply_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
     nonce = getattr(g, 'csp_nonce', '')
-    script_src = f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com"
-    connect_src = "connect-src 'self'"
+    script_src = f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com"
+    connect_src = "connect-src 'self' https://unpkg.com https://cdn.jsdelivr.net"
     img_src = "img-src 'self' data: https:"
     frame_src = "frame-src 'self'"
     if is_ads_enabled():
@@ -2927,7 +4331,7 @@ def apply_security_headers(response):
         + img_src
         + '; '
         + frame_src
-        + "; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self';"
+        + f"; object-src 'none'; base-uri 'self'; form-action 'self' {HIBP_BASE_URL}; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self';"
     )
     if request.is_secure:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -2935,7 +4339,7 @@ def apply_security_headers(response):
             response.headers['Content-Security-Policy'] += ' upgrade-insecure-requests;'
     if (
         request.path.startswith('/api/')
-        or request.endpoint in {'login', 'register', 'google_auth_login', 'google_auth_callback', 'logout', 'profile', 'settings'}
+        or request.endpoint in {'login', 'register', 'forgot_password', 'google_auth_login', 'google_auth_callback', 'logout', 'profile', 'settings'}
         or g.user is not None
     ):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -3000,6 +4404,8 @@ def inject_globals():
         'stripe_publishable_key': STRIPE_PUBLISHABLE_KEY,
         'ads_enabled': is_ads_enabled(),
         'adsense_client': ADSENSE_CLIENT,
+        'smtp_enabled': is_smtp_enabled(),
+        'google_vision_enabled': is_google_vision_enabled(),
         'facecheck_enabled': is_facecheck_enabled(),
         'facecheck_base_url': FACECHECK_BASE_URL,
         'ubl_payout_configured': is_ubl_payout_configured(),
@@ -3043,7 +4449,7 @@ def register():
         password = request.form.get('password') or ''
         profile_file = request.files.get('profile_image')
 
-        if not name or not email or not phone or not password:
+        if not name or not email or not password:
             flash('Please fill all required fields.', 'error')
             return render_template('register.html')
 
@@ -3051,7 +4457,7 @@ def register():
             flash('Please enter a valid email address.', 'error')
             return render_template('register.html')
 
-        if not is_valid_phone(phone):
+        if phone and not is_valid_phone(phone):
             flash('Please enter a valid phone number (10-15 digits).', 'error')
             return render_template('register.html')
 
@@ -3064,7 +4470,7 @@ def register():
             flash('Email already exists. Please login.', 'error')
             return redirect(url_for('login'))
 
-        if get_user_by_phone(phone):
+        if phone and get_user_by_phone(phone):
             flash('Phone already exists. Please login.', 'error')
             return redirect(url_for('login'))
 
@@ -3114,7 +4520,7 @@ def login():
         user = get_user_by_identifier(identifier)
         if not user or not check_password_hash(user['password_hash'], password):
             record_login_failure(identifier, ip)
-            flash('Invalid phone/email or password.', 'error')
+            flash('Invalid email or password.', 'error')
             return render_template('login.html', next_url=next_url)
 
         clear_login_failures(identifier, ip)
@@ -3277,7 +4683,48 @@ def attack_simulator():
 @app.route('/features/face-intel')
 @login_required
 def face_intel():
-    return render_template('features/face_intel.html')
+    return render_template(
+        'features/face_intel.html',
+        trained_face_gallery_enabled=is_trained_face_gallery_enabled(),
+        emotion_model_enabled=is_emotion_model_enabled(),
+    )
+
+
+@app.route('/forgot-password')
+def forgot_password():
+    if g.user is not None:
+        return redirect(url_for('settings'))
+    return render_template('forgot_password.html')
+
+
+@app.route('/api/face-intel/image', methods=['GET'])
+def face_intel_image_api():
+    raw_path = str(request.args.get('path') or '').strip()
+    if not raw_path:
+        return jsonify({'ok': False, 'message': 'Image path is required.'}), 400
+    try:
+        decoded_path = url_parse.unquote(raw_path)
+    except Exception:
+        decoded_path = raw_path
+    candidate = BASE_DIR / decoded_path
+    try:
+        resolved = candidate.resolve()
+        base = BASE_DIR.resolve()
+        allowed_prefixes = [
+            (BASE_DIR / 'data' / 'curated').resolve(),
+            (BASE_DIR / 'data' / 'face_db_images').resolve(),
+            (BASE_DIR / 'data' / 'face_queries').resolve(),
+        ]
+        if not str(resolved).startswith(str(base)) or not resolved.exists() or not resolved.is_file():
+            return jsonify({'ok': False, 'message': 'Image was not found.'}), 404
+        if not any(str(resolved).startswith(str(prefix)) for prefix in allowed_prefixes):
+            return jsonify({'ok': False, 'message': 'Image was not found.'}), 404
+    except Exception:
+        return jsonify({'ok': False, 'message': 'Invalid image path.'}), 400
+    if resolved.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
+        return jsonify({'ok': False, 'message': 'Unsupported image format.'}), 400
+    mimetype = mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream'
+    return send_file(resolved, mimetype=mimetype, conditional=True, max_age=3600)
 
 
 @app.route('/analysis')
@@ -3319,6 +4766,18 @@ def reports():
     return render_template('reports.html', reports=reports_data, report_filter=report_filter, keyword=keyword)
 
 
+@app.route('/reports/export/pdf')
+@login_required
+def export_reports_pdf():
+    report_filter = request.args.get('filter', 'all').lower()
+    keyword = request.args.get('q', '').strip()
+    if report_filter not in {'all', 'today', 'week'}:
+        report_filter = 'all'
+    pdf_io = build_reports_pdf_bytes(int(g.user['id']), report_filter, keyword)
+    filename = f'reports-{datetime.now().strftime("%Y%m%d-%H%M%S")}.pdf'
+    return send_file(pdf_io, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+
 @app.route('/settings')
 @login_required
 def settings():
@@ -3335,33 +4794,25 @@ def profile():
     if request.method == 'POST':
         name = (request.form.get('name') or '').strip()
         email = (request.form.get('email') or '').strip().lower()
-        phone = (request.form.get('phone') or '').strip()
         profile_file = request.files.get('profile_image')
 
-        if not name or not email or not phone:
-            flash('Name, email, and phone are required.', 'error')
+        if not name or not email:
+            flash('Name and email are required.', 'error')
             return redirect(url_for('profile'))
         if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
             flash('Please enter a valid email address.', 'error')
-            return redirect(url_for('profile'))
-        if not is_valid_phone(phone):
-            flash('Please enter a valid phone number (10-15 digits).', 'error')
             return redirect(url_for('profile'))
 
         existing_email = get_user_by_email(email)
         if existing_email and int(existing_email['id']) != int(g.user['id']):
             flash('This email is already used by another account.', 'error')
             return redirect(url_for('profile'))
-        existing_phone = get_user_by_phone(phone)
-        if existing_phone and int(existing_phone['id']) != int(g.user['id']):
-            flash('This phone number is already used by another account.', 'error')
-            return redirect(url_for('profile'))
 
         saved_image, image_error = save_profile_image(profile_file, int(g.user['id']))
         if image_error:
             flash(image_error, 'error')
             return redirect(url_for('profile'))
-        update_user_profile(int(g.user['id']), name, email, phone, saved_image)
+        update_user_profile(int(g.user['id']), name, email, str(g.user['phone'] or ''), saved_image)
         flash('Profile updated successfully.', 'success')
         return redirect(url_for('profile'))
 
@@ -3627,6 +5078,20 @@ def face_intel_api():
     result = run_facecheck_search(image)
     if not result.get('ok'):
         return jsonify(result), 400
+    try:
+        try:
+            image.stream.seek(0)
+        except Exception:
+            pass
+        image_info = read_image_upload(image, required=True)
+        quality = assess_face_image_quality(image_info) if image_info.get('ok') else {}
+        emotion = predict_face_emotion(image_info) if image_info.get('ok') else {}
+        if quality.get('preview'):
+            result['query_preview'] = result.get('query_preview') or quality.get('preview')
+        if emotion.get('ok'):
+            result['emotion'] = emotion
+    except Exception:
+        pass
 
     save_scan_report(
         int(g.user['id']),
@@ -3636,6 +5101,84 @@ def face_intel_api():
         result.get('status', 'UNKNOWN'),
         result.get('findings', []),
     )
+    return jsonify(result)
+
+
+@app.route('/api/face-intel/local-faces', methods=['GET'])
+@api_login_required
+def local_face_list_api():
+    return jsonify(get_local_face_records_summary(int(g.user['id'])))
+
+
+@app.route('/api/face-intel/local-enroll', methods=['POST'])
+@api_login_required
+def local_face_enroll_api():
+    consent = (request.form.get('consent') or '').strip().lower()
+    if consent not in {'yes', 'true', '1'}:
+        return jsonify({'ok': False, 'message': 'Consent required before saving a face profile.'}), 400
+
+    person_name = (request.form.get('person_name') or '').strip()
+    image = request.files.get('image')
+    result = enroll_local_face_record(int(g.user['id']), person_name, image)
+    if not result.get('ok'):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.route('/api/face-intel/local-compare', methods=['POST'])
+@api_login_required
+def local_face_compare_api():
+    consent = (request.form.get('consent') or '').strip().lower()
+    if consent not in {'yes', 'true', '1'}:
+        return jsonify({'ok': False, 'message': 'Consent required before comparing face profiles.'}), 400
+
+    image = request.files.get('image')
+    result = compare_local_face_database(int(g.user['id']), image)
+    if not result.get('ok'):
+        return jsonify(result), 400
+
+    save_scan_report(
+        int(g.user['id']),
+        f"local-face-db:{(image.filename if image else 'unknown')[:80]}",
+        'facecheck',
+        int(result.get('score', 0)),
+        result.get('status', 'UNKNOWN'),
+        result.get('findings', []),
+    )
+    return jsonify(result)
+
+
+@app.route('/api/face-intel/gallery-compare', methods=['POST'])
+@api_login_required
+def trained_gallery_compare_api():
+    consent = (request.form.get('consent') or '').strip().lower()
+    if consent not in {'yes', 'true', '1'}:
+        return jsonify({'ok': False, 'message': 'Consent required before comparing the trained gallery.'}), 400
+
+    image = request.files.get('image')
+    result = compare_trained_face_gallery(int(g.user['id']), image)
+    if not result.get('ok'):
+        return jsonify(result), 400
+
+    save_scan_report(
+        int(g.user['id']),
+        f"trained-face-gallery:{(image.filename if image else 'unknown')[:80]}",
+        'facecheck',
+        int(result.get('score', 0)),
+        result.get('status', 'UNKNOWN'),
+        result.get('findings', []),
+    )
+    return jsonify(result)
+
+
+@app.route('/api/face-intel/local-delete', methods=['POST'])
+@api_login_required
+def local_face_delete_api():
+    payload = request.json or {}
+    record_id = (payload.get('record_id') or '').strip()
+    result = delete_local_face_record(int(g.user['id']), record_id)
+    if not result.get('ok'):
+        return jsonify(result), 400
     return jsonify(result)
 
 
@@ -3716,21 +5259,15 @@ def theme_api():
 def request_password_code_api():
     payload = request.json or {}
     channel = str(payload.get('channel') or '').strip().lower()
-    if channel not in {'email', 'phone'}:
-        return jsonify({'ok': False, 'message': 'Choose email or phone for code delivery.'}), 400
+    if channel != 'email':
+        return jsonify({'ok': False, 'message': 'Choose email delivery for the verification code.'}), 400
 
     destination = ''
     masked = ''
-    if channel == 'email':
-        destination = str(g.user['email'] or '').strip().lower()
-        if not destination or '@' not in destination:
-            return jsonify({'ok': False, 'message': 'No valid email found on profile.'}), 400
-        masked = mask_email(destination)
-    else:
-        destination = normalize_phone(g.user['phone'] or '')
-        if not destination:
-            return jsonify({'ok': False, 'message': 'No valid phone found on profile.'}), 400
-        masked = mask_phone(destination)
+    destination = str(g.user['email'] or '').strip().lower()
+    if not destination or '@' not in destination:
+        return jsonify({'ok': False, 'message': 'No valid email found on profile.'}), 400
+    masked = mask_email(destination)
 
     bundle = build_password_code(channel)
     session['pwd_reset'] = {
@@ -3742,11 +5279,29 @@ def request_password_code_api():
         'expires_at': int(time.time()) + 10 * 60,
     }
 
-    message = f'Code sent to your {channel}: {masked}.'
-    if OTP_DEBUG_MODE:
-        message += f' Demo code: {bundle["code"]}'
+    email_ok, email_error = send_email_message(
+        destination,
+        f'{APP_BRAND_NAME} password reset code',
+        build_password_reset_email_body(g.user['name'], bundle['code']),
+    )
+    preview_mode = OTP_DEBUG_MODE or not email_ok
+    message = f'Code prepared for your email: {masked}.'
+    if email_ok:
+        message = f'Code sent to your email: {masked}.'
+    elif email_error:
+        message += f' {email_error}'
+    if preview_mode:
+        message += f' Temporary code: {bundle["code"]}'
 
-    return jsonify({'ok': True, 'message': message, 'channel': channel})
+    return jsonify(
+        {
+            'ok': True,
+            'message': message,
+            'channel': channel,
+            'delivery_mode': 'email' if email_ok else 'preview',
+            'preview_code': bundle['code'] if preview_mode else '',
+        }
+    )
 
 
 @app.route('/api/change-password-with-code', methods=['POST'])
@@ -3793,6 +5348,103 @@ def change_password_with_code_api():
     update_user_password(int(g.user['id']), new_password)
     session.pop('pwd_reset', None)
     return jsonify({'ok': True, 'message': 'Password changed successfully.'})
+
+
+@app.route('/api/public-request-password-code', methods=['POST'])
+def public_request_password_code_api():
+    payload = request.json or {}
+    email = str(payload.get('email') or '').strip().lower()
+    if not email or '@' not in email:
+        return jsonify({'ok': False, 'message': 'Enter a valid Gmail or email address.'}), 400
+
+    try:
+        user = get_user_by_email(email)
+    except Exception:
+        return jsonify({'ok': False, 'message': 'Account lookup is temporarily unavailable on this server. Please try again after restart.'}), 503
+    if not user:
+        return jsonify({'ok': False, 'message': 'No account was found for this email.'}), 404
+
+    bundle = build_password_code('email')
+    session['public_pwd_reset'] = {
+        'user_id': int(user['id']),
+        'destination': email,
+        'salt': bundle['salt'],
+        'hash': bundle['hash'],
+        'attempts': 0,
+        'expires_at': int(time.time()) + 10 * 60,
+    }
+
+    email_ok, email_error = send_email_message(
+        email,
+        f'{APP_BRAND_NAME} password reset code',
+        build_password_reset_email_body(str(user['name'] or 'User'), bundle['code']),
+    )
+    preview_mode = OTP_DEBUG_MODE or not email_ok
+    message = f'Code prepared for your email: {mask_email(email)}.'
+    if email_ok:
+        message = f'Code sent to your email: {mask_email(email)}.'
+    elif email_error:
+        message += f' {email_error}'
+    if preview_mode:
+        message += f' Temporary code: {bundle["code"]}'
+
+    return jsonify(
+        {
+            'ok': True,
+            'message': message,
+            'delivery_mode': 'email' if email_ok else 'preview',
+            'preview_code': bundle['code'] if preview_mode else '',
+        }
+    )
+
+
+@app.route('/api/public-change-password-with-code', methods=['POST'])
+def public_change_password_with_code_api():
+    payload = request.json or {}
+    email = str(payload.get('email') or '').strip().lower()
+    code = str(payload.get('code') or '').strip()
+    new_password = str(payload.get('new_password') or '')
+    confirm_password = str(payload.get('confirm_password') or '')
+
+    flow = session.get('public_pwd_reset') or {}
+    if not flow:
+        return jsonify({'ok': False, 'message': 'Request a verification code first.'}), 400
+
+    if email != str(flow.get('destination') or '').strip().lower():
+        return jsonify({'ok': False, 'message': 'Use the same email address that received the code.'}), 400
+
+    now_ts = int(time.time())
+    if int(flow.get('expires_at', 0)) < now_ts:
+        session.pop('public_pwd_reset', None)
+        return jsonify({'ok': False, 'message': 'Code expired. Request a new code.'}), 400
+
+    attempts = int(flow.get('attempts', 0))
+    if attempts >= 6:
+        session.pop('public_pwd_reset', None)
+        return jsonify({'ok': False, 'message': 'Too many attempts. Request a new code.'}), 429
+
+    if len(code) != 6 or not code.isdigit():
+        flow['attempts'] = attempts + 1
+        session['public_pwd_reset'] = flow
+        return jsonify({'ok': False, 'message': 'Invalid code format. Enter 6 digits.'}), 400
+
+    if new_password != confirm_password:
+        return jsonify({'ok': False, 'message': 'New password and confirm password do not match.'}), 400
+    password_error = password_policy_error(new_password)
+    if password_error:
+        return jsonify({'ok': False, 'message': password_error}), 400
+
+    expected = str(flow.get('hash') or '')
+    salt = str(flow.get('salt') or '')
+    provided = hashlib.sha256(f'{salt}:{code}'.encode('utf-8')).hexdigest()
+    if not expected or not hmac.compare_digest(expected, provided):
+        flow['attempts'] = attempts + 1
+        session['public_pwd_reset'] = flow
+        return jsonify({'ok': False, 'message': 'Incorrect verification code.'}), 400
+
+    update_user_password(int(flow.get('user_id') or 0), new_password)
+    session.pop('public_pwd_reset', None)
+    return jsonify({'ok': True, 'message': 'Password changed successfully. You can login now.'})
 
 
 @app.route('/api/reports/reset', methods=['POST'])
@@ -4038,10 +5690,10 @@ def encryption_tool_api():
             output = decrypt_text_payload(text, secret)
             score = 18
             operation_label = 'Decrypt Text'
-            message = 'Text decrypted successfully.'
+            message = 'Your message was decrypted successfully.'
             notes = [
-                'If output is unreadable, verify token format and secret key.',
-                'Treat decrypted sensitive data carefully and avoid logging it.',
+                'If the message is not correct, check the cipher text and secret key.',
+                'Use the same secret key that was used for encryption.',
             ]
         else:
             return jsonify({'ok': False, 'message': 'Unsupported action.'}), 400

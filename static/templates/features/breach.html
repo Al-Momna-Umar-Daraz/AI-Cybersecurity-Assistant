@@ -3,24 +3,24 @@
 {% block content %}
 <div class="analyzer-container">
     <h1><i class="fas fa-user-shield"></i> Email Breach Checker</h1>
-    <p class="muted-text">Enter your Gmail/email and open Have I Been Pwned directly for live breach results.</p>
+    <p class="muted-text">Enter your email and open Have I Been Pwned directly for live breach results.</p>
 
-    <div class="input-section">
-        <input type="email" id="breachEmailInput" placeholder="Enter Gmail (e.g. yourname@gmail.com)">
-    </div>
+    <form id="breachHibpForm" class="input-section" action="https://haveibeenpwned.com/" method="get" onsubmit="return submitEmailBreachForm(event)">
+        <input type="email" id="breachEmailInput" name="Account" placeholder="Enter email (e.g. yourname@gmail.com)" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </form>
 
     <div class="settings-section mt-1">
         <h3><i class="fas fa-info-circle"></i> How To Use</h3>
         <ul class="report-threats">
-            <li>Type your email/Gmail in the input field.</li>
+            <li>Type your email in the input field.</li>
             <li>Click the button below.</li>
-            <li>You will be redirected to Have I Been Pwned with your email in the URL.</li>
+            <li>You will go to Have I Been Pwned with your email already added in the URL.</li>
         </ul>
     </div>
 
     <div class="input-section mt-1">
         <button id="breachOpenHibpBtn" type="button" onclick="checkEmailBreach()" class="btn-analyze breach-open-btn">
-            <i class="fas fa-external-link-alt"></i> Check on HaveIBeenPwned
+            <i class="fas fa-external-link-alt"></i> Check Email Breach
         </button>
     </div>
 
@@ -39,7 +39,7 @@
             <ul id="breachOutputDetails">
                 <li>Result panel is active.</li>
                 <li>Your domain risk notes will appear here.</li>
-                <li>Live HIBP result opens in a new tab.</li>
+                <li>Live HIBP result opens directly on the official site.</li>
             </ul>
         </div>
     </div>
@@ -113,20 +113,24 @@
         section.classList.remove('hidden');
     }
 
-    function openHibpForEmail(email) {
-        var e = String(email || '').trim().toLowerCase();
-        var url = 'https://haveibeenpwned.com/';
-        if (validEmail(e)) {
-            url = 'https://haveibeenpwned.com/account/' + encodeURIComponent(e);
-        }
-        return window.open(url, '_blank', 'noopener,noreferrer');
+    function getBreachEmailValue() {
+        const emailNode = byId('breachEmailInput');
+        if (emailNode) emailNode.blur();
+        return emailNode ? emailNode.value.trim().toLowerCase() : '';
     }
 
-    function openHibp() {
-        const emailNode = byId('breachEmailInput');
-        const email = emailNode ? emailNode.value.trim().toLowerCase() : '';
-        if (!email) { alert('Email is required. Please retype and try again.'); return; }
-        if (!validEmail(email)) { alert('Invalid email format. Please retype and try again.'); return; }
+    function submitEmailBreachForm(event) {
+        const email = getBreachEmailValue();
+        if (!email) {
+            if (event) event.preventDefault();
+            alert('Email is required. Please retype and try again.');
+            return false;
+        }
+        if (!validEmail(email)) {
+            if (event) event.preventDefault();
+            alert('Invalid email format. Please retype and try again.');
+            return false;
+        }
 
         var btn = byId('breachOpenHibpBtn');
         if (btn) {
@@ -135,31 +139,15 @@
         }
 
         var local = computeLocalRisk(email);
-        var targetUrl = 'https://haveibeenpwned.com/account/' + encodeURIComponent(email);
+        var targetUrl = 'https://haveibeenpwned.com/?Account=' + encodeURIComponent(email);
         renderOutput({
             score: local.score,
             status: local.status,
-            message: 'Opening live breach check page...',
+            message: 'Opening live email breach check page...',
             details: [
                 'Email: ' + email,
                 'Domain analyzed: ' + local.domain,
                 'Destination: ' + targetUrl
-            ].concat(local.notes)
-        });
-        var popup = openHibpForEmail(email);
-        var opened = !!(popup && !popup.closed);
-
-        renderOutput({
-            score: local.score,
-            status: local.status,
-            message: opened
-                ? 'Live check opened in new tab. Review official result there.'
-                : 'Popup blocked by browser. Click the link below manually.',
-            details: [
-                'Email: ' + email,
-                'Domain analyzed: ' + local.domain,
-                'Destination: ' + targetUrl,
-                opened ? 'Result page opened successfully.' : 'Allow popups for this site to open automatically.'
             ].concat(local.notes)
         });
 
@@ -167,13 +155,21 @@
             window.updateModuleInsight({
                 score: local.score,
                 status: local.status,
-                message: opened ? 'HIBP live page opened.' : 'Popup blocked, open HIBP link manually.',
+                message: 'HIBP live page is opening now.',
                 suggestions: local.notes.slice(0, 4)
             });
         }
+
+        return true;
     }
 
-    window.checkEmailBreach = openHibp;
+    window.checkEmailBreach = function checkEmailBreach() {
+        const email = getBreachEmailValue();
+        if (!submitEmailBreachForm()) return false;
+        window.location.assign('https://haveibeenpwned.com/?Account=' + encodeURIComponent(email));
+        return false;
+    };
+    window.submitEmailBreachForm = submitEmailBreachForm;
 
     function bind() {
         var input = byId('breachEmailInput');
@@ -182,7 +178,7 @@
             input.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    openHibp();
+                    window.checkEmailBreach();
                 }
             });
         }

@@ -3,31 +3,40 @@
 {% block title %}Login - CyberShield AI{% endblock %}
 
 {% block content %}
-<div class="auth-wrap">
-    <div class="auth-card">
-        <h1><i class="fas fa-sign-in-alt"></i> Login</h1>
-        <p>Login with phone number or Gmail/email.</p>
+<div class="auth-wrap auth-wrap-showcase">
+    <div class="auth-scene">
+        <div class="auth-visual-panel auth-visual-panel-motion">
+            <img src="{{ url_for('static', filename='brand-media/login-visual.jpg') }}" alt="Secure login visual">
+        </div>
 
-        <form method="POST" class="auth-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="next" value="{{ next_url or '' }}">
-            <label for="identifier">Phone Or Gmail</label>
-            <input id="identifier" name="identifier" type="text" required placeholder="+923001234567 or you@gmail.com">
+        <div class="auth-card auth-card-elevated">
+            <h1><i class="fas fa-sign-in-alt"></i> Login</h1>
+            <p>Login with your Gmail or email account.</p>
 
-            <label for="password">Password</label>
-            <input id="password" name="password" type="password" required placeholder="Enter password">
+            <form method="POST" class="auth-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="next" value="{{ next_url or '' }}">
+                <label for="identifier">Gmail Or Email</label>
+                <input id="identifier" name="identifier" type="text" required placeholder="you@gmail.com">
 
-            <button type="submit" class="btn-primary"><i class="fas fa-lock-open"></i> Login</button>
-        </form>
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" required placeholder="Enter password">
+                <div class="auth-inline-link">
+                    <a href="/forgot-password">Forgot Password?</a>
+                </div>
 
-        {% if google_oauth_enabled %}
-        <div class="auth-divider"><span>OR</span></div>
-        <a href="/auth/google/login{% if next_url %}?next={{ next_url }}{% endif %}" class="btn-secondary google-btn">
-            <i class="fab fa-google"></i> Continue With Google
-        </a>
-        {% endif %}
+                <button type="submit" class="btn-primary"><i class="fas fa-lock-open"></i> Login</button>
+            </form>
 
-        <p class="auth-help">No account? <a href="/register">Create one</a></p>
+            {% if google_oauth_enabled %}
+            <div class="auth-divider"><span>OR</span></div>
+            <a href="/auth/google/login{% if next_url %}?next={{ next_url }}{% endif %}" class="btn-secondary google-btn">
+                <i class="fab fa-google"></i> Continue With Google
+            </a>
+            {% endif %}
+
+            <p class="auth-help">No account? <a href="/register">Create one</a></p>
+        </div>
     </div>
 </div>
 {% endblock %}

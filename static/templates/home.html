@@ -1,53 +1,70 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="hero">
-    <div class="hero-content">
+<div{% if logged_in %} class="home-with-floating-chatbot"{% endif %}>
+<div class="hero hero-showcase hero-home-clean">
+    <div class="hero-content hero-content-rich">
+        <div class="hero-kicker">
+            <span class="hero-kicker-chip">AI Defense Workspace</span>
+            <span class="hero-kicker-chip alt">Live Risk Visibility</span>
+        </div>
         <h1><i class="fas fa-shield-virus"></i> AI-Powered Cybersecurity</h1>
-        <p>Analyze commands, scan URLs, check passwords, and simulate attacks safely.</p>
+        <p>Analyze commands, scan URLs, check passwords, and review digital exposure from one calm, focused workspace.</p>
         <div class="hero-buttons">
             <a href="/features/command" class="btn-primary">
                 <i class="fas fa-rocket"></i> Start Analysis
             </a>
-            <a href="/features/chatbot" class="btn-secondary">
-                <i class="fas fa-comments"></i> Chatbot
+            {% if logged_in %}
+            <a href="/analysis" class="btn-secondary">
+                <i class="fas fa-chart-pie"></i> Open Dashboard
             </a>
-        </div>
-    </div>
-    <div class="hero-stats hero-chatbot-panel">
-        <div class="hero-chatbot-copy">
-            <p class="dashboard-assistant-kicker">Chatbot</p>
-            <h2><i class="fas fa-robot"></i> Chatbot</h2>
-            <p>Cybersecurity sawalat ka seedha jawab lenay ke liye chatbot use karein. Video ya button par click karein aur chat open ho jayegi.</p>
-            <a href="/features/chatbot" class="btn-secondary">
-                <i class="fas fa-paper-plane"></i> Open Chatbot
+            {% else %}
+            <a href="/login" class="btn-secondary">
+                <i class="fas fa-sign-in-alt"></i> Secure Login
             </a>
+            {% endif %}
         </div>
-
-        <a href="/features/chatbot" class="dashboard-robot-zone hero-chatbot-video-zone" aria-label="Open chatbot">
-            <div class="dashboard-robot-track"></div>
-            <div class="dashboard-robot-halo"></div>
-            <div class="dashboard-robot-tag">Chatbot</div>
-            <div class="dashboard-robot-runner">
-                <div class="dashboard-robot-video-shell">
-                    <video
-                        class="dashboard-robot-video"
+        <form class="page-quick-search page-quick-search-home" id="homeQuickSearchForm">
+            <label class="sr-only" for="homeQuickSearch">Search tools from home page</label>
+            <i class="fas fa-magnifying-glass"></i>
+            <input id="homeQuickSearch" type="search" list="siteQuickSearchList" placeholder="Try: dashboard, email breach, face intel">
+            <button type="submit" class="btn-secondary">Search</button>
+        </form>
+        <div class="quick-link-row">
+            <button type="button" class="quick-link-chip" data-search-shortcut="command analyzer">Command</button>
+            <button type="button" class="quick-link-chip" data-search-shortcut="email breach">Email Breach</button>
+            <button type="button" class="quick-link-chip" data-search-shortcut="face intel">Face Intel</button>
+            <button type="button" class="quick-link-chip" data-search-shortcut="dashboard">Dashboard</button>
+        </div>
+        <div class="hero-mini-strip">
+            <article class="hero-mini-card">
+                <div class="hero-mini-motion">
+                    <dotlottie-wc
+                        src="{{ url_for('static', filename='brand-media/home-loading.lottie') }}"
                         autoplay
-                        muted
                         loop
-                        playsinline
-                        preload="auto"
-                    >
-                        <source src="{{ url_for('static', filename='videos/vedio.mp4') }}" type="video/mp4">
-                    </video>
+                        speed="1"
+                    ></dotlottie-wc>
                 </div>
-            </div>
-        </a>
+                <div>
+                    <strong>Clean Start</strong>
+                    <p>Focused onboarding with tool-first navigation.</p>
+                </div>
+            </article>
+            <article class="hero-mini-card">
+                <div class="hero-mini-icon"><i class="fas fa-wave-square"></i></div>
+                <div>
+                    <strong>Live Tracking</strong>
+                    <p>Move from scan actions to dashboard trends without friction.</p>
+                </div>
+            </article>
+        </div>
     </div>
 </div>
 
 <div class="features-preview">
     <h2>Core Features</h2>
+    <p class="section-subtitle">Move quickly into the tool you need without leaving the main workspace.</p>
     <div class="feature-grid">
         <a href="/features/command" class="feature-card feature-card-link">
             <i class="fas fa-terminal"></i>
@@ -67,7 +84,7 @@
         <a href="/features/breach" class="feature-card feature-card-link">
             <i class="fas fa-user-shield"></i>
             <h3>Email Breach Checker</h3>
-            <p>Check if an email appears in known data breaches</p>
+            <p>Open live email security checking with the official Have I Been Pwned page</p>
         </a>
         <a href="/features/port-scan" class="feature-card feature-card-link">
             <i class="fas fa-network-wired"></i>
@@ -84,11 +101,13 @@
             <h3>Encryption Tools</h3>
             <p>Encrypt/decrypt text plus SHA-256 and Base64 utilities</p>
         </a>
+        {% if logged_in %}
         <a href="/features/chatbot" class="feature-card feature-card-link">
             <i class="fas fa-robot"></i>
             <h3>Chatbot</h3>
             <p>Open the cybersecurity AI chat experience for direct questions and guided answers</p>
         </a>
+        {% endif %}
         <a href="/features/face-intel" class="feature-card feature-card-link">
             <i class="fas fa-camera"></i>
             <h3>Face Intelligence</h3>
@@ -99,6 +118,7 @@
 
 <div class="features-preview">
     <h2>Monetization Ready</h2>
+    <p class="section-subtitle">Revenue, reporting, and policy visibility now live inside the same product shell.</p>
     <div class="feature-grid">
         <a href="/monetization" class="feature-card feature-card-link">
             <i class="fas fa-rectangle-ad"></i>
@@ -116,5 +136,19 @@
             <p>Keep content quality high to avoid invalid traffic penalties.</p>
         </a>
     </div>
+</div>
+{% if logged_in %}
+<a href="/features/chatbot" class="dashboard-robot-zone dashboard-chatbot-float dashboard-chatbot-corner dashboard-chatbot-raised" aria-label="Open chatbot">
+    <div class="dashboard-robot-halo"></div>
+    <div class="dashboard-robot-tag">Chatbot</div>
+    <div class="dashboard-robot-runner">
+        <div class="dashboard-robot-video-shell">
+            <video class="dashboard-robot-video" autoplay muted loop playsinline>
+                <source src="{{ url_for('static', filename='videos/vedio.mp4') }}" type="video/mp4">
+            </video>
+        </div>
+    </div>
+</a>
+{% endif %}
 </div>
 {% endblock %}

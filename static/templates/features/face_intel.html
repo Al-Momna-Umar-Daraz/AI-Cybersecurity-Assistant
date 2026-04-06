@@ -1,25 +1,79 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="analyzer-container">
-    <h1><i class="fas fa-camera"></i> Face Recognition Intel (FaceCheck)</h1>
-    <p class="muted-text">Upload a face image to search public matches and detect impersonation risk. This tool does not identify private persons or extract personal social media identities.</p>
+<div class="analyzer-container face-intel-page">
+    <section class="face-intel-hero">
+        <div class="face-intel-copy">
+            <div class="hero-kicker">
+                <span class="hero-kicker-chip">Face Intelligence</span>
+                <span class="hero-kicker-chip alt">Live Compare</span>
+            </div>
+            <h1><i class="fas fa-camera-retro"></i> Face Recognition Intel</h1>
+            <p class="muted-text">Upload one photo and compare it with your saved DB faces and trained gallery matches.</p>
+            <div class="face-intel-status-strip">
+                <span class="face-status-pill {% if emotion_model_enabled %}safe{% else %}warning{% endif %}">
+                    <i class="fas fa-face-smile"></i>
+                    {% if emotion_model_enabled %}Emotion Model Ready{% else %}Emotion Model Not Ready{% endif %}
+                </span>
+                <span class="face-status-pill {% if trained_face_gallery_enabled %}safe{% else %}warning{% endif %}">
+                    <i class="fas fa-database"></i>
+                    {% if trained_face_gallery_enabled %}Gallery Matching Ready{% else %}Gallery Missing{% endif %}
+                </span>
+                <span class="face-status-pill {% if google_vision_enabled or facecheck_enabled %}safe{% else %}warning{% endif %}">
+                    <i class="fas fa-globe"></i>
+                    {% if google_vision_enabled or facecheck_enabled %}Public Scan Optional{% else %}Public Scan Offline{% endif %}
+                </span>
+            </div>
+        </div>
+    </section>
 
-    <div class="input-section">
-        <input type="file" id="faceImageInput" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
-        <label class="consent-row">
-            <input type="checkbox" id="faceConsentCheck">
-            <span>I confirm this image is authorized for lawful security analysis.</span>
-        </label>
-        <button onclick="runFaceIntel()" class="btn-analyze"><i class="fas fa-search"></i> Scan Face Match</button>
-        <p class="muted-text">
-            Direct link:
-            <a href="{{ facecheck_base_url }}" target="_blank" rel="noopener noreferrer">{{ facecheck_base_url }}</a>
-        </p>
-        {% if not facecheck_enabled %}
-        <p class="warning">Server API token not configured. Set <code>FACECHECK_API_TOKEN</code> to enable in-app scanning.</p>
-        {% endif %}
-    </div>
+    <section class="face-control-deck">
+        <div class="face-control-form">
+            <div class="input-section">
+                <input type="file" id="faceImageInput" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                <input type="text" id="facePersonName" placeholder="Type the person name before saving to local database">
+                <label class="consent-row">
+                    <input type="checkbox" id="faceConsentCheck">
+                    <span>I confirm this photo is allowed for lawful security analysis.</span>
+                </label>
+            </div>
+            <div id="faceInputNotice" class="face-input-notice">Upload one clear front-facing photo, tick consent, then run the scan.</div>
+            <div class="settings-actions">
+                <button id="runFaceIntelBtn" type="button" class="btn-analyze"><i class="fas fa-bolt"></i> Run Full Face Check</button>
+                <button id="saveFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-user-plus"></i> Save To Database</button>
+                <button id="compareFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-user-check"></i> Compare Local Faces</button>
+                <button id="refreshFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-rotate"></i> Refresh Saved Faces</button>
+            </div>
+            <p class="muted-text">Full check tries public scan, local database, and trained gallery in one run. If public scan is offline, local comparison still continues.</p>
+        </div>
+
+        <div id="faceLiveStage" class="face-live-stage">
+            <div class="face-live-head">
+                <p class="hero-panel-label">Best Match Preview</p>
+                <div id="faceEmotionBadge" class="face-emotion-badge">Emotion: Waiting</div>
+            </div>
+            <div class="face-live-compare">
+                <div class="face-live-pane">
+                    <div id="faceUploadedPreview" class="face-live-image face-live-placeholder">Your Pic</div>
+                    <div class="face-live-caption">Your Pic</div>
+                </div>
+                <div class="face-live-center">
+                    <div class="face-live-result-pill">
+                        <span class="face-live-result-label">Match Result</span>
+                        <div id="faceBestPercent" class="face-live-percent">0%</div>
+                    </div>
+                </div>
+                <div class="face-live-pane">
+                    <div id="faceMatchedPreview" class="face-live-image face-live-placeholder">DB Match</div>
+                    <div class="face-live-caption">Matching Pic</div>
+                </div>
+            </div>
+            <div class="face-live-foot">
+                <strong id="faceBestName">No match selected yet</strong>
+                <p id="faceLiveMessage" class="muted-text">Upload a clear face photo and run the scan.</p>
+            </div>
+        </div>
+    </section>
 
     <div id="faceResultSection" class="result-section hidden">
         <div class="threat-score">
@@ -30,8 +84,51 @@
             </div>
         </div>
         <div class="threat-details">
-            <h3>Top Public Similarity Matches</h3>
+            <h3>Public Face Scan</h3>
             <ul id="faceMatchList"></ul>
+        </div>
+    </div>
+
+    <div class="face-results-grid">
+        <div id="localFaceCompareSection" class="result-section hidden">
+            <div class="threat-score">
+                <div class="score-circle" id="localFaceScoreCircle"><span id="localFaceScoreValue">0</span>%</div>
+                <div>
+                    <div id="localFaceStatus">UNKNOWN</div>
+                    <small id="localFaceMessage" class="muted-text"></small>
+                </div>
+            </div>
+            <div class="threat-details">
+                <h3>Local Database Match</h3>
+                <div id="localFaceSummary" class="face-summary-card">Face summary will appear here after scanning.</div>
+                <div id="localFaceMatchCards" class="face-compare-grid"></div>
+                <ul id="localFaceMatchList"></ul>
+            </div>
+        </div>
+
+        <div id="galleryFaceCompareSection" class="result-section hidden">
+            <div class="threat-score">
+                <div class="score-circle" id="galleryFaceScoreCircle"><span id="galleryFaceScoreValue">0</span>%</div>
+                <div>
+                    <div id="galleryFaceStatus">UNKNOWN</div>
+                    <small id="galleryFaceMessage" class="muted-text"></small>
+                </div>
+            </div>
+            <div class="threat-details">
+                <h3>Trained Gallery Match</h3>
+                <div id="galleryFaceSummary" class="face-summary-card">Face summary will appear here after scanning.</div>
+                <div id="galleryFaceMatchCards" class="face-compare-grid"></div>
+                <ul id="galleryFaceMatchList"></ul>
+            </div>
+        </div>
+    </div>
+
+    <div id="localFaceSavedSection" class="result-section face-saved-library">
+        <div class="threat-details">
+            <h3>Saved Local Face Profiles</h3>
+            <ul id="localFaceSavedList">
+                <li>No saved local face profiles yet.</li>
+            </ul>
         </div>
     </div>
 </div>

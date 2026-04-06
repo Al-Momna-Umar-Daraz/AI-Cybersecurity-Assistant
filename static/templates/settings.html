@@ -39,19 +39,19 @@
         </label>
     </div>
 
-    <div class="settings-section setting-item" data-name="password reset security otp code email phone">
+    <div class="settings-section setting-item" data-name="password reset security otp code email gmail google">
         <h3>Password & Security</h3>
-        <p class="muted-text">Change password using a 6-digit verification code sent to your email or phone.</p>
+        <p class="muted-text">Change password using a 6-digit verification code sent to your Gmail or email address.</p>
 
         <div class="input-section mt-1">
             <select id="passwordCodeChannel">
                 <option value="email">Send code to Email ({{ current_user_email or 'not-set' }})</option>
-                <option value="phone">Send code to Phone ({{ current_user_phone or 'not-set' }})</option>
             </select>
             <button type="button" class="btn-secondary" onclick="requestPasswordCode()">
                 <i class="fas fa-paper-plane"></i> Send Code
             </button>
         </div>
+        <p class="muted-text mt-1">If email service is not configured on the server yet, a temporary code preview will appear so you can still test the flow locally.</p>
 
         <div class="input-section mt-1">
             <input id="passwordOtpCode" type="text" maxlength="6" placeholder="Enter 6-digit code (example: 123456)">
@@ -61,6 +61,19 @@
                 <i class="fas fa-lock"></i> Change Password
             </button>
         </div>
+    </div>
+
+    <div class="settings-section setting-item" data-name="google account connect sign in">
+        <h3>Google Account</h3>
+        {% if google_oauth_enabled %}
+        <p class="safe">Google connection is ready on this server.</p>
+        <a href="/auth/google/login?next=/settings" class="btn-secondary google-btn">
+            <i class="fab fa-google"></i> Connect Google Account
+        </a>
+        {% else %}
+        <p class="warning">Google connection needs server credentials before it can run live.</p>
+        <p class="muted-text">Add <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, and redirect URI in the server environment for live hosting.</p>
+        {% endif %}
     </div>
 
     <div class="settings-section setting-item" data-name="data reset cache">

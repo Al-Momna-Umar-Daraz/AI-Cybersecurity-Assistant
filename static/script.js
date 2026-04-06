@@ -110,6 +110,76 @@
         alert(String(message || 'Invalid input.') + ' Please retype and try again.');
     }
 
+    function setFaceInputNotice(message, type) {
+        var node = byId('faceInputNotice');
+        if (!node) return;
+        node.textContent = String(message || 'Upload one clear front-facing photo, tick consent, then run the scan.');
+        node.className = 'face-input-notice' + (type ? (' ' + String(type)) : '');
+    }
+
+    function setForgotPasswordNotice(message, type) {
+        var node = byId('forgotPasswordNotice');
+        if (!node) return;
+        var text = String(message || '').trim();
+        node.textContent = text;
+        node.className = 'auth-inline-notice' + (type ? (' ' + String(type)) : '');
+        if (!text) {
+            node.classList.add('hidden');
+        } else {
+            node.classList.remove('hidden');
+        }
+    }
+
+    function resolveSiteSearchTarget(rawValue) {
+        const value = String(rawValue || '').trim().toLowerCase();
+        if (!value) return '/';
+
+        const routes = [
+            { keys: ['dashboard', 'analysis', 'summary'], target: '/analysis' },
+            { keys: ['home', 'landing'], target: '/' },
+            { keys: ['command', 'terminal', 'command analyzer'], target: '/features/command' },
+            { keys: ['password', 'password checker', 'password strength'], target: '/features/password' },
+            { keys: ['url', 'url scanner', 'phishing'], target: '/features/url' },
+            { keys: ['email breach', 'breach', 'hibp', 'gmail'], target: '/features/breach' },
+            { keys: ['port', 'port scanner', 'ports'], target: '/features/port-scan' },
+            { keys: ['network', 'network scan', 'network ai'], target: '/features/network-scan' },
+            { keys: ['encryption', 'encrypt', 'decrypt'], target: '/features/encryption' },
+            { keys: ['face', 'face intel', 'face recognition'], target: '/features/face-intel' },
+            { keys: ['reports', 'report'], target: '/reports' },
+            { keys: ['settings', 'preferences'], target: '/settings' },
+            { keys: ['profile', 'account'], target: '/profile' },
+            { keys: ['chat', 'chatbot', 'assistant'], target: '/features/chatbot' }
+        ];
+
+        for (var i = 0; i < routes.length; i += 1) {
+            var route = routes[i];
+            if (route.keys.some(function (key) { return value.indexOf(key) >= 0; })) {
+                return route.target;
+            }
+        }
+
+        return '/analysis?q=' + encodeURIComponent(rawValue);
+    }
+
+    function submitSiteSearch(value) {
+        const target = resolveSiteSearchTarget(value);
+        if (!target) return;
+        window.location.assign(target);
+    }
+
+    function bindQuickSearchForm(formId, inputId) {
+        var form = byId(formId);
+        var input = byId(inputId);
+        if (!form || !input) return;
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var value = String(input.value || '').trim();
+            if (!value) return showInvalidInput('Type what you want to open first.');
+            submitSiteSearch(value);
+        });
+    }
+
     function isValidEmail(value) {
         return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(value || '').trim());
     }
@@ -181,6 +251,7 @@
     }
 
     function getInsightHost() {
+        if (window.location.pathname === '/features/attack') return null;
         if (document.querySelector('[data-disable-insight="1"]')) return null;
         return document.querySelector('.analyzer-container, .chat-container, .simulator-container');
     }
@@ -514,7 +585,7 @@
                 noticeText: '',
                 noticeClass: 'live',
                 welcomeLabel: 'AI Assistant',
-                welcomeText: 'Hello! I am your pro cybersecurity assistant. Ask me about phishing, Gmail security, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.'
+                welcomeText: 'Hello! I am your pro cybersecurity assistant. Ask me about phishing, email breach checks, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.'
             };
         }
 
@@ -528,7 +599,7 @@
             noticeText: String(shell.dataset.initNoticeText || '').trim(),
             noticeClass: initModeClass,
             welcomeLabel: String(shell.dataset.initWelcomeLabel || 'AI Assistant').trim() || 'AI Assistant',
-            welcomeText: String(shell.dataset.initWelcomeText || 'Hello! I am your pro cybersecurity assistant. Ask me about phishing, Gmail security, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.').trim()
+            welcomeText: String(shell.dataset.initWelcomeText || 'Hello! I am your pro cybersecurity assistant. Ask me about phishing, email breach checks, Linux hardening, SOC checklists, password policy, incident response, or suspicious URLs.').trim()
         };
     }
 
@@ -777,106 +848,8 @@
         if (!email) return showInvalidInput('Email is empty.');
         if (!isValidEmail(email)) return showInvalidInput('Invalid email format.');
 
-        function buildLocalEmailFallback(emailValue, reason) {
-            var domain = '';
-            if (emailValue.indexOf('@') >= 0) {
-                domain = emailValue.split('@')[1].toLowerCase();
-            }
-            var score = 22;
-            if (/(gmail\.com|outlook\.com|hotmail\.com|yahoo\.com|icloud\.com|proton\.me|protonmail\.com)$/.test(domain)) score = 18;
-            if (/(\.ru|\.tk|\.xyz|\.top|\.click)$/.test(domain)) score = 72;
-            else if (domain.indexOf('-') >= 0 || (domain.match(/\./g) || []).length >= 2) score = 46;
-            var status = score < 30 ? 'SAFE' : (score < 70 ? 'WARNING' : 'DANGEROUS');
-
-            return {
-                ok: true,
-                score: score,
-                status: status,
-                mode: 'fallback',
-                live_available: false,
-                message: reason || 'Live breach check unavailable. Showing local safety estimate.',
-                breaches: [],
-                safety_notes: [
-                    'Live breach API is unavailable right now; this is a local risk estimate.',
-                    'Exact breach count cannot be confirmed without live lookup.',
-                    status === 'SAFE'
-                        ? 'Current email domain pattern appears lower risk, but keep MFA enabled.'
-                        : (status === 'WARNING'
-                            ? 'Moderate risk estimate: rotate password and monitor account activity.'
-                            : 'Higher risk estimate: change password immediately and secure recovery options.'),
-                    'Email domain analyzed: ' + (domain || 'unknown')
-                ]
-            };
-        }
-
-        function renderBreachResult(data) {
-            const score = Number(data.score || 0);
-            const status = data.status || 'UNKNOWN';
-            const message = data.message || '';
-            const breaches = Array.isArray(data.breaches) ? data.breaches : [];
-            const safetyNotes = Array.isArray(data.safety_notes) ? data.safety_notes : [];
-            const messageLower = String(message).toLowerCase();
-            const isLiveMode = String(data.mode || 'live').toLowerCase() === 'live'
-                && data.live_available !== false
-                && messageLower.indexOf('api key is missing') === -1
-                && messageLower.indexOf('unable to reach hibp') === -1;
-            const mode = isLiveMode ? 'Live' : 'Fallback';
-
-            const resultSection = byId('breachResultSection');
-            const scoreValue = byId('breachScoreValue');
-            const statusNode = byId('breachStatus');
-            const messageNode = byId('breachMessage');
-            const modeNode = byId('breachMode');
-            const scoreCircle = byId('breachScoreCircle');
-            const breachList = byId('breachList');
-            const safetyList = byId('breachSafetyList');
-
-            if (scoreValue) scoreValue.textContent = String(score);
-            if (statusNode) statusNode.textContent = status;
-            if (messageNode) messageNode.textContent = message;
-            if (modeNode) modeNode.textContent = 'Mode: ' + mode;
-            if (scoreCircle) scoreCircle.className = 'score-circle ' + getRiskClass(score);
-
-            if (breachList) {
-                breachList.innerHTML = breaches.length
-                    ? breaches.map(function (b) {
-                        const title = b.title || b.name || 'Unknown breach';
-                        const date = b.breach_date || 'N/A';
-                        const domain = b.domain || 'unknown';
-                        return '<li><strong>' + safeText(title) + '</strong> - ' +
-                            safeText(domain) + ' (' + safeText(date) + ')</li>';
-                    }).join('')
-                    : '<li>No breach records found in current response.</li>';
-            }
-
-            if (safetyList) {
-                safetyList.innerHTML = safetyNotes.length
-                    ? safetyNotes.map(function (item) { return '<li>' + safeText(item) + '</li>'; }).join('')
-                    : '<li>Use a unique password and enable MFA for account safety.</li>';
-            }
-
-            updateModuleInsight({
-                score: score,
-                status: status,
-                message: message || 'Breach check completed.',
-                suggestions: breaches.length ? ['Enable MFA and reset affected passwords.', 'Monitor reused credentials in other services.'] : ['No breach found in current response, still rotate old passwords periodically.']
-            });
-            if (resultSection) resultSection.classList.remove('hidden');
-        }
-
-        apiFetchJson('/api/breach-check', {
-            method: 'POST',
-            headers: jsonHeaders(),
-            body: JSON.stringify({ email: email })
-        })
-            .then(function (data) {
-                renderBreachResult(data || {});
-            })
-            .catch(function (err) {
-                const msg = (err && err.message) ? err.message : 'Breach check failed. Please retype and try again.';
-                const fallback = buildLocalEmailFallback(email, msg);
-                renderBreachResult(fallback);
-            });
+        const hibpUrl = 'https://haveibeenpwned.com/?Account=' + encodeURIComponent(email);
+        window.location.assign(hibpUrl);
     };
 
     window.runPortScan = function runPortScan() {
@@ -1072,16 +1045,16 @@
                 label: 'Encrypt Text',
                 inputLabel: 'Plain Text',
                 placeholder: 'Example: My confidential note',
-                hint: 'Encrypt converts plain text into a protected token using your secret key.',
+                hint: 'Type your message and a secret key. This will create cipher text.',
                 secretRequired: true
             };
         }
         if (key === 'decrypt_text') {
             return {
                 label: 'Decrypt Text',
-                inputLabel: 'Encrypted Token',
+                inputLabel: 'Cipher Text',
                 placeholder: 'Example: v2.ABCD...XYZ',
-                hint: 'Paste encrypted token and use the same secret key to decrypt.',
+                hint: 'Paste your cipher text and enter the same secret key to get your original message back.',
                 secretRequired: true
             };
         }
@@ -1115,23 +1088,32 @@
     function syncEncryptionActionUi() {
         var actionNode = byId('encryptionActionInput');
         if (!actionNode) return;
+        var actionValue = String(actionNode.value || 'sha256').trim().toLowerCase();
         var textNode = byId('encryptionTextInput');
         var hintNode = byId('encryptionHintText');
         var secretWrap = byId('encryptionSecretWrap');
         var secretLabel = byId('encryptionSecretLabel');
         var textLabel = byId('encryptionTextLabel');
         var secretNode = byId('encryptionSecretInput');
-        var meta = getEncryptionActionMeta(actionNode.value || 'sha256');
+        var outputLabel = byId('encryptionOutputLabel');
+        var meta = getEncryptionActionMeta(actionValue);
 
         if (textNode) textNode.placeholder = meta.placeholder;
         if (hintNode) hintNode.textContent = meta.hint;
         if (textLabel) textLabel.textContent = meta.inputLabel;
+        if (outputLabel) outputLabel.textContent = actionValue === 'decrypt_text' ? 'Your Message' : 'Output';
 
         if (secretWrap) secretWrap.classList.toggle('hidden', !meta.secretRequired);
         if (secretLabel) secretLabel.classList.toggle('hidden', !meta.secretRequired);
+        if (secretLabel && meta.secretRequired) secretLabel.textContent = 'Secret Key';
         if (secretNode) {
             if (!meta.secretRequired) secretNode.value = '';
             secretNode.required = !!meta.secretRequired;
+            if (meta.secretRequired) {
+                secretNode.placeholder = actionValue === 'decrypt_text'
+                    ? 'Enter the same secret key'
+                    : 'Enter a secret key';
+            }
         }
     }
 
@@ -1148,6 +1130,29 @@
         }
     }
 
+    function setEncryptionText(id, value) {
+        var node = byId(id);
+        if (node) node.textContent = String(value || '');
+    }
+
+    function generateEncryptionKey() {
+        var length = 24;
+        var charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+        var chars = [];
+        if (window.crypto && window.crypto.getRandomValues) {
+            var bytes = new Uint32Array(length);
+            window.crypto.getRandomValues(bytes);
+            for (var i = 0; i < length; i += 1) {
+                chars.push(charset.charAt(bytes[i] % charset.length));
+            }
+            return chars.join('');
+        }
+        while (chars.length < length) {
+            chars.push(charset.charAt(Math.floor(Math.random() * charset.length)));
+        }
+        return chars.join('');
+    }
+
     function getEncryptionOutputPlaceholder() {
         return 'Run Tool to generate output for the selected operation.';
     }
@@ -1160,6 +1165,14 @@
         var outputNode = byId('encryptionOutput');
         if (!outputNode) return;
         outputNode.value = getEncryptionOutputPlaceholder();
+    }
+
+    function syncEncryptionDecryptPreview(value) {
+        var wrap = byId('encryptionDecryptSourceWrap');
+        var node = byId('encryptionDecryptSource');
+        var text = String(value || '').trim();
+        if (node) node.value = text;
+        if (wrap) wrap.classList.toggle('hidden', !text);
     }
 
     function renderEncryptionNotes(notes) {
@@ -1208,14 +1221,15 @@
         if (textNode) textNode.value = '';
         if (secretNode) secretNode.value = '';
         if (outputNode) outputNode.value = getEncryptionOutputPlaceholder();
+        syncEncryptionDecryptPreview('');
 
-        setText('encryptionScoreValue', '0');
-        setText('encryptionStatus', 'READY');
-        setText('encryptionMessage', 'Form cleared. Choose an operation and run again.');
-        setText('encryptionOperation', '-');
-        setText('encryptionOutputLength', '0');
-        setText('encryptionSafePercent', '100%');
-        setText('encryptionProcessedAt', '-');
+        setEncryptionText('encryptionScoreValue', '0');
+        setEncryptionText('encryptionStatus', 'READY');
+        setEncryptionText('encryptionMessage', 'Form cleared. Choose an operation and run again.');
+        setEncryptionText('encryptionOperation', '-');
+        setEncryptionText('encryptionOutputLength', '0');
+        setEncryptionText('encryptionSafePercent', '100%');
+        setEncryptionText('encryptionProcessedAt', '-');
         var circle = byId('encryptionScoreCircle');
         if (circle) circle.className = 'score-circle';
         renderEncryptionNotes(['Run Tool to load operation-specific security notes.']);
@@ -1231,6 +1245,9 @@
         if (!actionNode.dataset.boundEncryptionAction) {
             actionNode.dataset.boundEncryptionAction = '1';
             actionNode.addEventListener('change', function () {
+                if (String(actionNode.value || '').trim().toLowerCase() !== 'decrypt_text') {
+                    syncEncryptionDecryptPreview('');
+                }
                 syncEncryptionActionUi();
             });
         }
@@ -1259,6 +1276,30 @@
             });
         }
 
+        var generateKeyBtn = byId('encryptionGenerateKeyBtn');
+        if (generateKeyBtn && !generateKeyBtn.dataset.boundEncryptionGenerate) {
+            generateKeyBtn.dataset.boundEncryptionGenerate = '1';
+            generateKeyBtn.addEventListener('click', function () {
+                window.generateEncryptionKeyAndFill();
+            });
+        }
+
+        var copyKeyBtn = byId('encryptionCopyKeyBtn');
+        if (copyKeyBtn && !copyKeyBtn.dataset.boundEncryptionCopyKey) {
+            copyKeyBtn.dataset.boundEncryptionCopyKey = '1';
+            copyKeyBtn.addEventListener('click', function () {
+                window.copyEncryptionKey();
+            });
+        }
+
+        var useOutputBtn = byId('encryptionUseOutputBtn');
+        if (useOutputBtn && !useOutputBtn.dataset.boundEncryptionUseOutput) {
+            useOutputBtn.dataset.boundEncryptionUseOutput = '1';
+            useOutputBtn.addEventListener('click', function () {
+                window.useEncryptionOutputForDecrypt();
+            });
+        }
+
         var secretToggle = byId('encryptionSecretToggle');
         var secretInput = byId('encryptionSecretInput');
         if (secretToggle && secretInput && !secretToggle.dataset.boundEncryptionSecretToggle) {
@@ -1270,6 +1311,64 @@
             });
         }
     }
+
+    window.generateEncryptionKeyAndFill = function generateEncryptionKeyAndFill() {
+        var secretNode = byId('encryptionSecretInput');
+        if (!secretNode) return;
+        var key = generateEncryptionKey();
+        secretNode.value = key;
+        secretNode.type = 'text';
+        var secretToggle = byId('encryptionSecretToggle');
+        if (secretToggle) secretToggle.innerHTML = '<i class="fas fa-eye-slash"></i>';
+        setEncryptionText('encryptionStatus', 'READY');
+        setEncryptionText('encryptionMessage', 'New secret key generated. Save this key to decrypt your message later.');
+    };
+
+    window.copyEncryptionKey = function copyEncryptionKey() {
+        var secretNode = byId('encryptionSecretInput');
+        var value = secretNode ? String(secretNode.value || '').trim() : '';
+        if (!value) return showInvalidInput('Secret key is empty. Generate or enter a key first.');
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(value).then(function () {
+                setEncryptionText('encryptionStatus', 'READY');
+                setEncryptionText('encryptionMessage', 'Secret key copied successfully.');
+            }).catch(function () {
+                showInvalidInput('Copy failed. Please copy the key manually.');
+            });
+            return;
+        }
+
+        if (secretNode) {
+            secretNode.type = 'text';
+            secretNode.focus();
+            secretNode.select();
+        }
+        try {
+            document.execCommand('copy');
+            setEncryptionText('encryptionStatus', 'READY');
+            setEncryptionText('encryptionMessage', 'Secret key copied successfully.');
+        } catch (_) {
+            showInvalidInput('Copy failed. Please copy the key manually.');
+        }
+    };
+
+    window.useEncryptionOutputForDecrypt = function useEncryptionOutputForDecrypt() {
+        var outputNode = byId('encryptionOutput');
+        var actionNode = byId('encryptionActionInput');
+        var textNode = byId('encryptionTextInput');
+        var outputValue = outputNode ? String(outputNode.value || '').trim() : '';
+        if (!outputValue || isEncryptionOutputPlaceholder(outputValue)) {
+            return showInvalidInput('First generate encrypted output, then use this button for decryption.');
+        }
+        if (actionNode) actionNode.value = 'decrypt_text';
+        if (textNode) textNode.value = outputValue;
+        syncEncryptionDecryptPreview(outputValue);
+        syncEncryptionActionUi();
+        if (textNode) textNode.focus();
+        setEncryptionText('encryptionStatus', 'READY');
+        setEncryptionText('encryptionMessage', 'Cipher text loaded. Enter the same secret key and click Run Tool.');
+    };
 
     window.runEncryptionTool = function runEncryptionTool() {
         var action = (byId('encryptionActionInput') || {}).value || 'sha256';
@@ -1283,8 +1382,8 @@
         if (meta.secretRequired && String(secret).trim().length < 6) return showInvalidInput('Secret key must be at least 6 characters.');
 
         setEncryptionBusy(true);
-        setText('encryptionStatus', 'PROCESSING');
-        setText('encryptionMessage', 'Running ' + meta.label + '...');
+        setEncryptionText('encryptionStatus', 'PROCESSING');
+        setEncryptionText('encryptionMessage', 'Running ' + meta.label + '...');
 
         apiFetchJson('/api/encryption-tool', {
             method: 'POST',
@@ -1298,16 +1397,21 @@
                 var safePercent = Number(data.safe_percent);
                 if (!Number.isFinite(safePercent)) safePercent = Math.max(0, 100 - score);
 
-                setText('encryptionScoreValue', String(score));
-                setText('encryptionStatus', status);
-                setText('encryptionMessage', data.message || 'Operation complete.');
-                setText('encryptionOperation', data.operation_label || meta.label);
-                setText('encryptionOutputLength', String(output.length));
-                setText('encryptionSafePercent', String(safePercent) + '%');
-                setText('encryptionProcessedAt', data.processed_at || (new Date()).toLocaleTimeString());
+                setEncryptionText('encryptionScoreValue', String(score));
+                setEncryptionText('encryptionStatus', status);
+                setEncryptionText('encryptionMessage', data.message || 'Operation complete.');
+                setEncryptionText('encryptionOperation', data.operation_label || meta.label);
+                setEncryptionText('encryptionOutputLength', String(output.length));
+                setEncryptionText('encryptionSafePercent', String(safePercent) + '%');
+                setEncryptionText('encryptionProcessedAt', data.processed_at || (new Date()).toLocaleTimeString());
 
                 var outputNode = byId('encryptionOutput');
                 if (outputNode) outputNode.value = output || 'No textual output generated by this operation.';
+                if (String(action).trim().toLowerCase() === 'decrypt_text') {
+                    syncEncryptionDecryptPreview(text);
+                } else {
+                    syncEncryptionDecryptPreview('');
+                }
 
                 var circle = byId('encryptionScoreCircle');
                 if (circle) circle.className = 'score-circle ' + getRiskClass(score);
@@ -1333,10 +1437,10 @@
             })
             .catch(function (err) {
                 var message = (err && err.message) ? err.message : 'Encryption tool failed.';
-                setText('encryptionStatus', 'WARNING');
-                setText('encryptionMessage', message);
-                setText('encryptionOperation', meta.label);
-                setText('encryptionProcessedAt', (new Date()).toLocaleTimeString());
+                setEncryptionText('encryptionStatus', 'WARNING');
+                setEncryptionText('encryptionMessage', message);
+                setEncryptionText('encryptionOperation', meta.label);
+                setEncryptionText('encryptionProcessedAt', (new Date()).toLocaleTimeString());
                 renderEncryptionNotes([message, 'Retype input and try again with valid format.']);
                 updateModuleInsight({ score: 45, status: 'WARNING', message: message });
                 alert(message + ' Please retype and try again.');
@@ -1379,90 +1483,745 @@
             });
     };
 
-    window.runFaceIntel = function runFaceIntel() {
+    function getFaceIntelState() {
         const input = byId('faceImageInput');
         const consent = byId('faceConsentCheck');
         const file = input && input.files ? input.files[0] : null;
-        if (!file) return showInvalidInput('Image file is required.');
-        if (!/\.(png|jpg|jpeg|webp)$/i.test(String(file.name || ''))) return showInvalidInput('Only png, jpg, jpeg, webp allowed.');
-        if (!consent || !consent.checked) {
-            return showInvalidInput('Consent is required for lawful image analysis.');
+        if (!file) return { ok: false, message: 'Please upload one face photo first.' };
+        if (!/\.(png|jpg|jpeg|webp)$/i.test(String(file.name || ''))) return { ok: false, message: 'Please upload only PNG, JPG, JPEG, or WebP face photo.' };
+        if (!consent || !consent.checked) return { ok: false, message: 'Please tick consent before running face analysis.' };
+        return {
+            ok: true,
+            file: file,
+            personName: ((byId('facePersonName') || {}).value || '').trim()
+        };
+    }
+
+    function buildFaceIntelFormData(extraFields) {
+        const state = getFaceIntelState();
+        if (!state.ok) {
+            setFaceInputNotice(state.message, 'warning');
+            showInvalidInput(state.message);
+            return null;
+        }
+        setFaceInputNotice('Face image accepted. Scan is ready to run.', 'safe');
+        const formData = new FormData();
+        formData.append('image', state.file);
+        formData.append('consent', 'yes');
+        Object.keys(extraFields || {}).forEach(function (key) {
+            formData.append(key, String(extraFields[key] || ''));
+        });
+        return {
+            formData: formData,
+            personName: state.personName
+        };
+    }
+
+    function renderPublicFaceResult(data) {
+        const score = Number(data.score || 0);
+        const mode = String(data.mode || '').trim().toLowerCase();
+        const section = byId('faceResultSection');
+        byId('faceScoreValue').textContent = String(score);
+        byId('faceStatus').textContent = data.status || 'UNKNOWN';
+        byId('faceMessage').textContent = data.message || '';
+        byId('faceScoreCircle').className = 'score-circle ' + getRiskClass(score);
+        const matches = Array.isArray(data.matches) ? data.matches : [];
+        const list = byId('faceMatchList');
+        if (list) {
+            list.innerHTML = '';
+            if (!matches.length) {
+                if (mode === 'facecheck-live') {
+                    list.innerHTML = '<li>No public matches found.</li>';
+                }
+            } else {
+                matches.slice(0, 10).forEach(function (m) {
+                    const li = document.createElement('li');
+                    li.className = 'face-match-item';
+
+                    const thumbSrc = toFaceThumbSrc(m.base64 || '');
+                    if (thumbSrc) {
+                        const img = document.createElement('img');
+                        img.className = 'face-thumb';
+                        img.src = thumbSrc;
+                        img.alt = 'Match thumbnail';
+                        li.appendChild(img);
+                    }
+
+                    const info = document.createElement('div');
+                    info.className = 'face-match-meta';
+                    const scoreNode = document.createElement('strong');
+                    scoreNode.textContent = 'Similarity: ' + safeText(m.score) + '%';
+                    info.appendChild(scoreNode);
+
+                    const rawUrl = safeHttpUrl(m.url || '');
+                    if (rawUrl) {
+                        const link = document.createElement('a');
+                        link.href = rawUrl;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = rawUrl;
+                        info.appendChild(document.createElement('br'));
+                        info.appendChild(link);
+                    } else {
+                        const muted = document.createElement('div');
+                        muted.className = 'muted-text';
+                        muted.textContent = 'Source URL unavailable';
+                        info.appendChild(muted);
+                    }
+                    li.appendChild(info);
+                    list.appendChild(li);
+                });
+            }
+        }
+        if (section) {
+            if (!matches.length && mode !== 'facecheck-live') {
+                section.classList.add('hidden');
+            } else {
+                section.classList.remove('hidden');
+            }
+        }
+        return { score: score, matches: matches };
+    }
+
+    function renderFaceEmotionBadge(emotion) {
+        const node = byId('faceEmotionBadge');
+        if (!node) return;
+        const data = emotion && typeof emotion === 'object' ? emotion : {};
+        const label = String(data.display_label || data.label || '').trim();
+        const confidence = Number(data.confidence || 0);
+        if (!label) {
+            node.textContent = 'Emotion: Waiting';
+            node.className = 'face-emotion-badge';
+            return;
+        }
+        node.textContent = confidence > 0
+            ? ('Emotion: ' + label + ' (' + Math.round(confidence) + '%)')
+            : ('Emotion: ' + label);
+        node.className = 'face-emotion-badge ready';
+    }
+
+    function getFaceEmotionCategory(label) {
+        const value = String(label || '').trim().toLowerCase();
+        if (!value) return 'Neutral';
+        if (['happy', 'joy'].includes(value)) return 'Positive';
+        if (['sad', 'angry', 'anger', 'mad', 'fear', 'disgust'].includes(value)) return 'Negative';
+        return 'Neutral';
+    }
+
+    function buildFaceSummaryHtml(data) {
+        const payload = data && typeof data === 'object' ? data : {};
+        const top = payload.top_match && typeof payload.top_match === 'object'
+            ? payload.top_match
+            : ((Array.isArray(payload.matches) && payload.matches.length) ? payload.matches[0] : null);
+        const similarity = top ? Math.round(Number(top.score || 0)) : 0;
+        const filename = top ? String(top.filename || top.id || top.name || 'N/A') : 'N/A';
+        const emotion = payload.emotion && typeof payload.emotion === 'object' ? payload.emotion : {};
+        const emotionLabel = String(emotion.display_label || emotion.label || '').trim();
+        const emotionConfidence = Math.round(Number(emotion.confidence || 0));
+        const category = getFaceEmotionCategory(emotionLabel);
+        const faceIssue = String(payload.message || '').toLowerCase().includes('face')
+            && String(payload.message || '').toLowerCase().includes('not')
+            && !top;
+        return [
+            'Face Match:',
+            '- Match Found: ' + (top ? 'Yes' : 'No'),
+            '- Similarity: ' + similarity + '%',
+            '- Matching Image: ' + filename,
+            '',
+            'Emotion Analysis:',
+            '- Emotion: ' + (faceIssue ? 'Face not detected properly' : (emotionLabel || 'Face not detected properly')),
+            '- Confidence: ' + (emotionLabel ? (emotionConfidence + '%') : '0%'),
+            '- Category: ' + (emotionLabel ? category : 'Neutral')
+        ].join('<br>');
+    }
+
+    function renderFaceSummary(nodeId, data) {
+        const node = byId(nodeId);
+        if (!node) return;
+        node.innerHTML = buildFaceSummaryHtml(data);
+    }
+
+    function renderLiveStagePreview(nodeId, src, placeholderText, altText) {
+        const node = byId(nodeId);
+        if (!node) return;
+        const safeSrc = String(src || '').trim();
+        if (safeSrc) {
+            node.innerHTML = '<img class="face-live-photo" src="' + safeText(safeSrc) + '" alt="' + safeText(altText || placeholderText || 'Face preview') + '">';
+            node.classList.remove('face-live-placeholder');
+        } else {
+            node.innerHTML = '<span class="face-live-empty-mark"><i class="fas fa-image"></i></span>';
+            node.classList.add('face-live-placeholder');
+        }
+    }
+
+    function getMatchPreviewSrc(match) {
+        const item = match && typeof match === 'object' ? match : {};
+        return String(item.preview || item.preview_url || '').trim();
+    }
+
+    function getSelectedFacePreviewSrc() {
+        const input = byId('faceImageInput');
+        return input && input.dataset ? String(input.dataset.previewSrc || '').trim() : '';
+    }
+
+    function previewSelectedFaceFile(file) {
+        const input = byId('faceImageInput');
+        if (!input || !window.FileReader) return;
+        if (!file) {
+            input.dataset.previewSrc = '';
+            renderLiveStagePreview('faceUploadedPreview', '', 'Your Pic', 'Your uploaded face');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            const result = String((event && event.target && event.target.result) || '').trim();
+            input.dataset.previewSrc = result;
+            renderLiveStagePreview('faceUploadedPreview', result, 'Your Pic', 'Your uploaded face');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function setFaceActionBusy(buttonId, busy, busyHtml) {
+        const btn = byId(buttonId);
+        if (!btn) return;
+        if (busy) {
+            if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = busyHtml || '<i class="fas fa-spinner fa-spin"></i> Working...';
+            return;
+        }
+        btn.disabled = false;
+        if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+    }
+
+    function resolveBestPreviewMatch(data) {
+        if (!data || typeof data !== 'object') return null;
+        const top = data.top_match && typeof data.top_match === 'object' ? data.top_match : null;
+        if (top && getMatchPreviewSrc(top)) return top;
+        const matches = Array.isArray(data.matches) ? data.matches : [];
+        for (let i = 0; i < matches.length; i += 1) {
+            if (getMatchPreviewSrc(matches[i])) return matches[i];
+        }
+        return top || (matches.length ? matches[0] : null);
+    }
+
+    function pickBestFaceMatch(localData, galleryData) {
+        const candidates = [];
+        [localData, galleryData].forEach(function (data) {
+            const top = resolveBestPreviewMatch(data);
+            if (!top) return;
+            candidates.push({
+                source: data && data.mode === 'trained-gallery' ? 'Trained Gallery' : 'Local Database',
+                data: data || {},
+                match: top,
+                score: Number(top.score || 0)
+            });
+        });
+        candidates.sort(function (a, b) { return b.score - a.score; });
+        return candidates.length ? candidates[0] : null;
+    }
+
+    function renderFaceLiveStage(bestCandidate, publicData) {
+        const bestPercent = byId('faceBestPercent');
+        const bestName = byId('faceBestName');
+        const liveMessage = byId('faceLiveMessage');
+        const publicEmotion = publicData && publicData.emotion ? publicData.emotion : {};
+        const bestEmotion = bestCandidate && bestCandidate.data && bestCandidate.data.emotion ? bestCandidate.data.emotion : publicEmotion;
+        const selectedPreview = getSelectedFacePreviewSrc();
+        renderFaceEmotionBadge(bestEmotion);
+
+        if (!bestCandidate) {
+            renderLiveStagePreview('faceUploadedPreview', (publicData || {}).query_preview || selectedPreview, 'Your Pic', 'Your uploaded face');
+            renderLiveStagePreview('faceMatchedPreview', '', 'DB Match', 'Matching database face');
+            if (bestPercent) bestPercent.textContent = '0%';
+            if (bestName) bestName.textContent = 'No strong database match found';
+            if (liveMessage) liveMessage.textContent = 'Try a clearer front-facing photo or save more database faces first.';
+            return;
         }
 
-        const formData = new FormData();
-        formData.append('image', file);
-        formData.append('consent', 'yes');
+        renderLiveStagePreview('faceUploadedPreview', bestCandidate.data.query_preview || selectedPreview, 'Your Pic', 'Your uploaded face');
+        renderLiveStagePreview('faceMatchedPreview', getMatchPreviewSrc(bestCandidate.match), 'DB Match', 'Best matching database face');
+        if (bestPercent) bestPercent.textContent = String(Math.round(Number(bestCandidate.match.score || 0))) + '%';
+        if (bestName) bestName.textContent = String(bestCandidate.match.name || 'Best match') + ' from ' + String(bestCandidate.source || 'database');
+        if (liveMessage) liveMessage.textContent = String(bestCandidate.data.message || 'Comparison completed. Review your pic and the matching DB pic below.');
+    }
+
+    function renderLocalFaceList(data) {
+        const list = byId('localFaceSavedList');
+        if (!list) return;
+        const items = Array.isArray((data || {}).items) ? data.items : [];
+        if (!items.length) {
+            list.innerHTML = '<li>No saved local face profiles yet.</li>';
+            return;
+        }
+        list.innerHTML = items.map(function (item) {
+            const preview = getMatchPreviewSrc(item);
+            return '<li class="saved-face-item">' +
+                (preview ? '<img class="face-thumb" src="' + safeText(preview) + '" alt="Saved face preview">' : '') +
+                '<div class="saved-face-meta"><strong>' + safeText(item.name || 'Unnamed face') + '</strong> - ' +
+                safeText(item.filename || 'image') + ' - ' +
+                safeText(item.created_at || 'saved recently') + '</div>' +
+                '<button type="button" class="btn-danger" onclick="deleteLocalFaceProfile(\'' + safeText(item.id || '') + '\')">Delete</button></li>';
+        }).join('');
+    }
+
+    function renderFaceCompareCards(containerId, data, emptyMessage) {
+        const container = byId(containerId);
+        if (!container) return;
+        const matches = Array.isArray((data || {}).matches) ? data.matches : [];
+        const queryPreview = String((data || {}).query_preview || getSelectedFacePreviewSrc() || '').trim();
+        const queryLabel = safeText((data || {}).query_label || 'Your Pic');
+        const matchLabel = safeText((data || {}).match_label || 'Matching Pic');
+
+        if (!matches.length) {
+            container.innerHTML = '<div class="muted-text">' + safeText(emptyMessage || 'No face matches available.') + '</div>';
+            return;
+        }
+
+        container.innerHTML = matches.slice(0, 3).map(function (item) {
+            const matchPreview = getMatchPreviewSrc(item);
+            return '<article class="face-compare-card">' +
+                '<div class="face-compare-summary">' + queryLabel + ' vs ' + matchLabel + ': ' + safeText(String(item.score || 0)) + '% match</div>' +
+                '<div class="face-compare-images">' +
+                '<div class="face-compare-pane">' +
+                (queryPreview ? '<img class="face-compare-image" src="' + safeText(queryPreview) + '" alt="Your pic">' : '<div class="face-compare-missing"><i class="fas fa-image"></i></div>') +
+                '<div class="face-compare-label">' + queryLabel + '</div>' +
+                '</div>' +
+                '<div class="face-compare-pane">' +
+                (matchPreview ? '<img class="face-compare-image" src="' + safeText(matchPreview) + '" alt="Matching pic">' : '<div class="face-compare-missing"><i class="fas fa-image"></i></div>') +
+                '<div class="face-compare-label">' + matchLabel + '</div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="face-compare-meta"><strong>' + safeText(item.name || 'Unknown match') + '</strong>' +
+                '<span>' + safeText(String(item.score || 0)) + '% match</span></div>' +
+                '<p class="face-compare-note">' + safeText(item.source === 'trained-gallery' ? 'Matched from trained gallery database.' : 'Matched from your saved local database.') + '</p>' +
+                '</article>';
+        }).join('');
+    }
+
+    function renderLocalFaceCompare(data) {
+        const score = Number(data.score || 0);
+        const status = data.status || 'UNKNOWN';
+        const matches = Array.isArray(data.matches) ? data.matches : [];
+        const findings = Array.isArray(data.findings) ? data.findings : [];
+
+        if (byId('localFaceScoreValue')) byId('localFaceScoreValue').textContent = String(score);
+        if (byId('localFaceStatus')) byId('localFaceStatus').textContent = status;
+        if (byId('localFaceMessage')) byId('localFaceMessage').textContent = data.message || '';
+        if (byId('localFaceScoreCircle')) byId('localFaceScoreCircle').className = 'score-circle ' + getRiskClass(score);
+        renderFaceSummary('localFaceSummary', data || {});
+        renderFaceCompareCards('localFaceMatchCards', data || {}, 'No local face match previews available.');
+        renderFaceEmotionBadge(data.emotion || {});
+        const list = byId('localFaceMatchList');
+        if (list) {
+            if (matches.length) {
+                list.innerHTML = matches.map(function (item) {
+                    return '<li><strong>' + safeText(item.name || 'Unnamed face') + '</strong> - ' +
+                        safeText(String(item.score || 0)) + '% similarity - ' +
+                        safeText(item.filename || 'image') + '</li>';
+                }).join('');
+            } else {
+                list.innerHTML = findings.length
+                    ? findings.map(function (item) { return '<li>' + safeText(item) + '</li>'; }).join('')
+                    : '<li>No local comparison results available.</li>';
+            }
+        }
+        if (byId('localFaceCompareSection')) byId('localFaceCompareSection').classList.remove('hidden');
+    }
+
+    function renderGalleryFaceCompare(data) {
+        const score = Number(data.score || 0);
+        const status = data.status || 'UNKNOWN';
+        const matches = Array.isArray(data.matches) ? data.matches : [];
+        const findings = Array.isArray(data.findings) ? data.findings : [];
+
+        if (byId('galleryFaceScoreValue')) byId('galleryFaceScoreValue').textContent = String(score);
+        if (byId('galleryFaceStatus')) byId('galleryFaceStatus').textContent = status;
+        if (byId('galleryFaceMessage')) byId('galleryFaceMessage').textContent = data.message || '';
+        if (byId('galleryFaceScoreCircle')) byId('galleryFaceScoreCircle').className = 'score-circle ' + getRiskClass(score);
+        renderFaceSummary('galleryFaceSummary', data || {});
+        renderFaceCompareCards('galleryFaceMatchCards', data || {}, 'No trained gallery match previews available.');
+        renderFaceEmotionBadge(data.emotion || {});
+        const list = byId('galleryFaceMatchList');
+        if (list) {
+            list.innerHTML = findings.length
+                ? findings.map(function (item) { return '<li>' + safeText(item) + '</li>'; }).join('')
+                : '<li>No trained gallery comparison results available.</li>';
+        }
+        if (byId('galleryFaceCompareSection')) byId('galleryFaceCompareSection').classList.remove('hidden');
+    }
+
+    function getFaceStatusPriority(status) {
+        const normalized = String(status || 'UNKNOWN').toUpperCase();
+        if (normalized === 'DANGEROUS') return 3;
+        if (normalized === 'WARNING') return 2;
+        if (normalized === 'SAFE') return 1;
+        return 0;
+    }
+
+    function mergeFaceInsight(publicData, publicRendered, localData, galleryData) {
+        const publicScore = Number((publicRendered || {}).score || 0);
+        const localScore = Number((localData || {}).score || 0);
+        const galleryScore = Number((galleryData || {}).score || 0);
+        const publicStatus = (publicData && publicData.status) || inferStatus(publicScore);
+        const localStatus = (localData && localData.status) || inferStatus(localScore);
+        const galleryStatus = (galleryData && galleryData.status) || inferStatus(galleryScore);
+        let mergedStatus = publicStatus;
+        if (getFaceStatusPriority(localStatus) > getFaceStatusPriority(mergedStatus)) mergedStatus = localStatus;
+        if (getFaceStatusPriority(galleryStatus) > getFaceStatusPriority(mergedStatus)) mergedStatus = galleryStatus;
+        const mergedScore = Math.max(publicScore, localScore, galleryScore);
+        const suggestions = [];
+        const publicMatches = Array.isArray((publicRendered || {}).matches) ? publicRendered.matches : [];
+        const localFindings = Array.isArray((localData || {}).findings) ? localData.findings : [];
+        const galleryFindings = Array.isArray((galleryData || {}).findings) ? galleryData.findings : [];
+
+        if (publicMatches.length) {
+            suggestions.push('Public face matches were found. Review each source carefully before taking action.');
+        } else {
+            suggestions.push('No strong public face matches were found in this scan.');
+        }
+
+        if (Array.isArray((localData || {}).matches) && localData.matches.length) {
+            suggestions.push((localData.message || 'Local face comparison completed.').trim());
+        } else if (localFindings.length) {
+            suggestions.push(localFindings[0]);
+        }
+
+        if (Array.isArray((galleryData || {}).matches) && galleryData.matches.length) {
+            suggestions.push((galleryData.message || 'Trained gallery comparison completed.').trim());
+        } else if (galleryFindings.length) {
+            suggestions.push(galleryFindings[0]);
+        }
+
+        return {
+            score: mergedScore,
+            status: mergedStatus,
+            message: [
+                (publicData && publicData.message) || 'Public face scan completed.',
+                (localData && localData.message) || 'Local face comparison completed.',
+                (galleryData && galleryData.message) || 'Trained gallery comparison completed.'
+            ].filter(Boolean).join(' '),
+            suggestions: suggestions.slice(0, 3),
+            output_lines: [
+                'Public face scan score: ' + publicScore + '%',
+                'Local database score: ' + localScore + '%',
+                'Trained gallery score: ' + galleryScore + '%'
+            ]
+        };
+    }
+
+    function executeLocalFaceCompare() {
+        const payload = buildFaceIntelFormData();
+        if (!payload) return Promise.reject(new Error('Face image and consent are required.'));
+
+        return apiFetchJson('/api/face-intel/local-compare', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            body: payload.formData
+        }).then(function (data) {
+            renderLocalFaceCompare(data || {});
+            return data || {};
+        });
+    }
+
+    function executeGalleryFaceCompare() {
+        const payload = buildFaceIntelFormData();
+        if (!payload) return Promise.reject(new Error('Face image and consent are required.'));
+
+        return apiFetchJson('/api/face-intel/gallery-compare', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            body: payload.formData
+        }).then(function (data) {
+            renderGalleryFaceCompare(data || {});
+            return data || {};
+        });
+    }
+
+    window.runFaceIntel = function runFaceIntel() {
+        const payload = buildFaceIntelFormData();
+        if (!payload) return;
+        setFaceActionBusy('runFaceIntelBtn', true, '<i class="fas fa-spinner fa-spin"></i> Running...');
+        setFaceInputNotice('Running face analysis now. Please wait for the match results.', 'safe');
 
         apiFetchJson('/api/face-intel', {
             method: 'POST',
             headers: { 'X-CSRF-Token': getCsrfToken() },
-            body: formData
+            body: payload.formData
         })
             .then(function (data) {
-                const score = Number(data.score || 0);
-                byId('faceScoreValue').textContent = String(score);
-                byId('faceStatus').textContent = data.status || 'UNKNOWN';
-                byId('faceMessage').textContent = data.message || '';
-                byId('faceScoreCircle').className = 'score-circle ' + getRiskClass(score);
-                const matches = Array.isArray(data.matches) ? data.matches : [];
-                const list = byId('faceMatchList');
-                if (list) {
-                    list.innerHTML = '';
-                    if (!matches.length) {
-                        list.innerHTML = '<li>No public matches found.</li>';
-                    } else {
-                        matches.slice(0, 10).forEach(function (m) {
-                            const li = document.createElement('li');
-                            li.className = 'face-match-item';
-
-                            const thumbSrc = toFaceThumbSrc(m.base64 || '');
-                            if (thumbSrc) {
-                                const img = document.createElement('img');
-                                img.className = 'face-thumb';
-                                img.src = thumbSrc;
-                                img.alt = 'Match thumbnail';
-                                li.appendChild(img);
-                            }
-
-                            const info = document.createElement('div');
-                            info.className = 'face-match-meta';
-                            const scoreNode = document.createElement('strong');
-                            scoreNode.textContent = 'Similarity: ' + safeText(m.score) + '%';
-                            info.appendChild(scoreNode);
-
-                            const rawUrl = safeHttpUrl(m.url || '');
-                            if (rawUrl) {
-                                const link = document.createElement('a');
-                                link.href = rawUrl;
-                                link.target = '_blank';
-                                link.rel = 'noopener noreferrer';
-                                link.textContent = rawUrl;
-                                info.appendChild(document.createElement('br'));
-                                info.appendChild(link);
-                            } else {
-                                const muted = document.createElement('div');
-                                muted.className = 'muted-text';
-                                muted.textContent = 'Source URL unavailable';
-                                info.appendChild(muted);
-                            }
-                            li.appendChild(info);
-                            list.appendChild(li);
-                        });
-                    }
-                }
-                updateModuleInsight({
-                    score: score,
-                    status: data.status || inferStatus(score),
-                    message: data.message || 'Face intelligence scan completed.',
-                    suggestions: matches.length ? ['Review matched links manually for impersonation.', 'Request takedown where identity misuse is found.'] : ['No public matches found in current scan.']
-                });
-                byId('faceResultSection').classList.remove('hidden');
+                return { ok: true, data: data || {} };
             })
             .catch(function (err) {
-                updateModuleInsight({ score: 50, status: 'WARNING', message: (err && err.message) ? err.message : 'Face search failed.' });
+                return {
+                    ok: false,
+                    data: {
+                        score: 48,
+                        status: 'WARNING',
+                        message: (err && err.message) ? err.message : 'Public face scan is not available right now.',
+                        matches: [],
+                        findings: ['Public scan could not complete, but local database comparison will continue.']
+                    }
+                };
+            })
+            .then(function (publicState) {
+                const publicData = publicState.data || {};
+                const rendered = renderPublicFaceResult(publicData);
+                return executeLocalFaceCompare()
+                    .catch(function (err) {
+                        const fallback = {
+                            score: 52,
+                            status: 'WARNING',
+                            message: (err && err.message) ? err.message : 'Local face comparison failed.',
+                            matches: [],
+                            findings: ['Local face comparison could not finish in this run.']
+                        };
+                        renderLocalFaceCompare(fallback);
+                        return fallback;
+                    })
+                    .then(function (localData) {
+                        return executeGalleryFaceCompare()
+                            .catch(function (err) {
+                                const fallback = {
+                                    score: 55,
+                                    status: 'WARNING',
+                                    message: (err && err.message) ? err.message : 'Trained gallery comparison failed.',
+                                    matches: [],
+                                    findings: ['Trained gallery comparison could not finish in this run.']
+                                };
+                                renderGalleryFaceCompare(fallback);
+                                return fallback;
+                            })
+                            .then(function (galleryData) {
+                                renderFaceLiveStage(pickBestFaceMatch(localData || {}, galleryData || {}), publicData || {});
+                                setFaceInputNotice('Face analysis completed. Review your pic, the matched DB pic, and the emotion result below.', 'safe');
+                                updateModuleInsight(mergeFaceInsight(publicData || {}, rendered, localData || {}, galleryData || {}));
+                                return { publicData: publicData || {}, publicRendered: rendered, localData: localData || {}, galleryData: galleryData || {} };
+                            });
+                    });
+            })
+            .catch(function (err) {
+                renderFaceLiveStage(null, {});
+                setFaceInputNotice((err && err.message) ? err.message : 'Face search failed. Please retry with a clearer image.', 'warning');
+                updateModuleInsight({
+                    score: 50,
+                    status: 'WARNING',
+                    message: (err && err.message) ? err.message : 'Face search failed.'
+                });
                 alert((err && err.message) ? err.message : 'Face search failed. Please retry.');
+            })
+            .finally(function () {
+                setFaceActionBusy('runFaceIntelBtn', false);
             });
     };
+
+    window.refreshLocalFaceProfiles = function refreshLocalFaceProfiles() {
+        apiFetchJson('/api/face-intel/local-faces')
+            .then(function (data) {
+                renderLocalFaceList(data || {});
+            })
+            .catch(function () { });
+    };
+
+    window.saveLocalFaceProfile = function saveLocalFaceProfile() {
+        const payload = buildFaceIntelFormData({ person_name: ((byId('facePersonName') || {}).value || '').trim() });
+        if (!payload) return;
+        if (!payload.personName || payload.personName.length < 2) return showInvalidInput('Enter a known face name first.');
+        setFaceActionBusy('saveFaceIntelBtn', true, '<i class="fas fa-spinner fa-spin"></i> Saving...');
+
+        apiFetchJson('/api/face-intel/local-enroll', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            body: payload.formData
+        })
+            .then(function (data) {
+                refreshLocalFaceProfiles();
+                setFaceInputNotice(data.message || 'Known face saved successfully.', 'safe');
+                updateModuleInsight({
+                    score: 14,
+                    status: 'SAFE',
+                    message: data.message || 'Known face saved successfully.',
+                    suggestions: ['Use a clear front-facing image for better local matching.', 'Save one face per person for clean results.']
+                });
+                alert(data.message || 'Known face saved successfully.');
+            })
+            .catch(function (err) {
+                alert((err && err.message) ? err.message : 'Could not save the known face.');
+            })
+            .finally(function () {
+                setFaceActionBusy('saveFaceIntelBtn', false);
+            });
+    };
+
+    window.compareLocalFaceProfile = function compareLocalFaceProfile() {
+        setFaceActionBusy('compareFaceIntelBtn', true, '<i class="fas fa-spinner fa-spin"></i> Comparing...');
+        executeLocalFaceCompare()
+            .then(function (data) {
+                const localData = data || {};
+                const hasLocalPreview = !!resolveBestPreviewMatch(localData);
+                if (hasLocalPreview) {
+                    renderFaceLiveStage(pickBestFaceMatch(localData, {}), {});
+                    setFaceInputNotice(localData.message || 'Local face comparison completed.', 'safe');
+                    updateModuleInsight({
+                        score: Number(localData.score || 0),
+                        status: localData.status || inferStatus(Number(localData.score || 0)),
+                        message: localData.message || 'Local face comparison completed.',
+                        suggestions: (Array.isArray(localData.findings) ? localData.findings : []).slice(0, 3)
+                    });
+                    return null;
+                }
+
+                return executeGalleryFaceCompare()
+                    .then(function (galleryData) {
+                        renderFaceLiveStage(pickBestFaceMatch(localData, galleryData || {}), {});
+                        setFaceInputNotice((galleryData && galleryData.message) || localData.message || 'Database comparison completed.', 'safe');
+                        updateModuleInsight({
+                            score: Math.max(Number(localData.score || 0), Number((galleryData || {}).score || 0)),
+                            status: (galleryData && galleryData.status) || localData.status || 'WARNING',
+                            message: ((galleryData && galleryData.message) || localData.message || 'Database comparison completed.'),
+                            suggestions: ((Array.isArray((galleryData || {}).findings) ? galleryData.findings : []).concat(Array.isArray(localData.findings) ? localData.findings : [])).slice(0, 3)
+                        });
+                        return null;
+                    })
+                    .catch(function () {
+                        renderFaceLiveStage(pickBestFaceMatch(localData, {}), {});
+                        setFaceInputNotice(localData.message || 'Local face comparison completed.', localData.matches && localData.matches.length ? 'safe' : 'warning');
+                        updateModuleInsight({
+                            score: Number(localData.score || 0),
+                            status: localData.status || inferStatus(Number(localData.score || 0)),
+                            message: localData.message || 'Local face comparison completed.',
+                            suggestions: (Array.isArray(localData.findings) ? localData.findings : []).slice(0, 3)
+                        });
+                        return null;
+                    });
+            })
+            .catch(function () {
+                return executeGalleryFaceCompare()
+                    .then(function (galleryData) {
+                        renderFaceLiveStage(pickBestFaceMatch({}, galleryData || {}), {});
+                        setFaceInputNotice((galleryData && galleryData.message) ? galleryData.message : 'Gallery comparison completed.', 'safe');
+                        updateModuleInsight({
+                            score: Number((galleryData || {}).score || 0),
+                            status: (galleryData && galleryData.status) || inferStatus(Number((galleryData || {}).score || 0)),
+                            message: (galleryData && galleryData.message) || 'Gallery comparison completed.',
+                            suggestions: (Array.isArray((galleryData || {}).findings) ? galleryData.findings : []).slice(0, 3)
+                        });
+                        return null;
+                    });
+            })
+            .catch(function (err) {
+                setFaceInputNotice((err && err.message) ? err.message : 'Face comparison failed.', 'warning');
+                updateModuleInsight({
+                    score: 50,
+                    status: 'WARNING',
+                    message: (err && err.message) ? err.message : 'Face comparison failed.'
+                });
+            })
+            .finally(function () {
+                setFaceActionBusy('compareFaceIntelBtn', false);
+            });
+    };
+
+    window.deleteLocalFaceProfile = function deleteLocalFaceProfile(recordId) {
+        const rid = String(recordId || '').trim();
+        if (!rid) return;
+        if (!window.confirm('Delete this saved face profile?')) return;
+
+        apiFetchJson('/api/face-intel/local-delete', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ record_id: rid })
+        })
+            .then(function (data) {
+                window.refreshLocalFaceProfiles();
+                updateModuleInsight({
+                    score: 12,
+                    status: 'SAFE',
+                    message: data.message || 'Saved face profile deleted successfully.',
+                    suggestions: ['Save only the faces you still need for matching.']
+                });
+            })
+            .catch(function (err) {
+                alert((err && err.message) ? err.message : 'Could not delete the saved face profile.');
+            });
+    };
+
+    function initFaceIntelPage() {
+        if (!byId('faceImageInput')) return;
+        setFaceInputNotice('Upload one clear front-facing photo, tick consent, then run the scan.');
+        renderFaceEmotionBadge({});
+        renderFaceLiveStage(null, {});
+        var runBtn = byId('runFaceIntelBtn');
+        var saveBtn = byId('saveFaceIntelBtn');
+        var compareBtn = byId('compareFaceIntelBtn');
+        var refreshBtn = byId('refreshFaceIntelBtn');
+        if (runBtn && !runBtn.dataset.boundFaceIntel) {
+            runBtn.dataset.boundFaceIntel = '1';
+            runBtn.addEventListener('click', function () {
+                window.runFaceIntel();
+            });
+        }
+        if (saveBtn && !saveBtn.dataset.boundFaceIntel) {
+            saveBtn.dataset.boundFaceIntel = '1';
+            saveBtn.addEventListener('click', function () {
+                window.saveLocalFaceProfile();
+            });
+        }
+        if (compareBtn && !compareBtn.dataset.boundFaceIntel) {
+            compareBtn.dataset.boundFaceIntel = '1';
+            compareBtn.addEventListener('click', function () {
+                window.compareLocalFaceProfile();
+            });
+        }
+        if (refreshBtn && !refreshBtn.dataset.boundFaceIntel) {
+            refreshBtn.dataset.boundFaceIntel = '1';
+            refreshBtn.addEventListener('click', function () {
+                window.refreshLocalFaceProfiles();
+            });
+        }
+        var fileInput = byId('faceImageInput');
+        if (fileInput && !fileInput.dataset.boundPreview) {
+            fileInput.dataset.boundPreview = '1';
+            fileInput.addEventListener('change', function () {
+                var file = (fileInput.files && fileInput.files[0]) ? fileInput.files[0] : null;
+                previewSelectedFaceFile(file);
+                if (file) {
+                    setFaceInputNotice('Photo selected. Tick consent and click Run Full Face Check.', 'safe');
+                } else {
+                    setFaceInputNotice('Upload one clear front-facing photo, tick consent, then run the scan.');
+                }
+            });
+        }
+        window.refreshLocalFaceProfiles();
+    }
+
+    function initSiteSearch() {
+        bindQuickSearchForm('siteQuickSearchForm', 'siteQuickSearch');
+        bindQuickSearchForm('homeQuickSearchForm', 'homeQuickSearch');
+        bindQuickSearchForm('dashboardQuickSearchForm', 'dashboardQuickSearch');
+
+        document.querySelectorAll('[data-search-shortcut]').forEach(function (node) {
+            node.addEventListener('click', function () {
+                submitSiteSearch(node.getAttribute('data-search-shortcut') || '');
+            });
+        });
+    }
+
+    function initPasswordVisibilityToggles() {
+        document.querySelectorAll('[data-toggle-password]').forEach(function (toggle) {
+            if (toggle.dataset.boundPasswordToggle) return;
+            toggle.dataset.boundPasswordToggle = '1';
+            toggle.addEventListener('click', function () {
+                var targetId = String(toggle.getAttribute('data-toggle-password') || '').trim();
+                var input = targetId ? byId(targetId) : null;
+                if (!input) return;
+                var visible = input.type === 'text';
+                input.type = visible ? 'password' : 'text';
+                toggle.innerHTML = visible ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+                toggle.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+            });
+        });
+    }
 
     function sendChatMessage(moduleKey) {
         var key = moduleKey === 'chatbot' ? 'chatbot' : 'assistant';
@@ -1837,6 +2596,7 @@
     var threatChart = null;
     var typeChart = null;
     var trendChart = null;
+    var analysisAutoRefreshTimer = null;
 
     function drawAnalysisCharts(data) {
         if (typeof Chart === 'undefined') return;
@@ -1856,15 +2616,27 @@
                 labels: ['Safe', 'Warning', 'Dangerous'],
                 datasets: [{
                     data: [data.status_counts.SAFE, data.status_counts.WARNING, data.status_counts.DANGEROUS],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444']
+                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                    borderWidth: 0,
+                    hoverOffset: 2
                 }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                cutout: '72%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 10, usePointStyle: true }
+                    }
+                }
             }
         });
 
         typeChart = new Chart(typeCanvas, {
             type: 'bar',
             data: {
-                labels: ['Commands', 'Passwords', 'URLs', 'Breach', 'Port Scan', 'Network AI', 'Encryption', 'Linux Lab', 'Face Intel'],
+                labels: ['Commands', 'Passwords', 'URLs', 'Email Breach', 'Port Scan', 'Network AI', 'Encryption', 'Linux Lab', 'Face Intel'],
                 datasets: [{
                     label: 'Avg Risk Score',
                     data: [
@@ -1881,7 +2653,11 @@
                     backgroundColor: ['#5bc0eb','#22c55e','#9bc53d','#ff6f59','#f25f5c','#16a34a','#84dcc6','#c77dff','#4f46e5']
                 }]
             },
-            options: { scales: { y: { beginAtZero: true, max: 100 } } }
+            options: {
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, max: 100 } },
+                plugins: { legend: { display: false } }
+            }
         });
 
         trendChart = new Chart(trendCanvas, {
@@ -1897,7 +2673,11 @@
                     tension: 0.3
                 }]
             },
-            options: { scales: { y: { beginAtZero: true } } }
+            options: {
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true } },
+                plugins: { legend: { display: false } }
+            }
         });
     }
 
@@ -1915,17 +2695,99 @@
         });
     }
 
-    window.refreshAnalysisDashboard = function refreshAnalysisDashboard() {
+    function setAnalysisRefreshStatus(message, isBusy) {
+        var node = byId('analysisRefreshStatus');
+        var btn = byId('analysisRefreshBtn');
+        if (node) node.textContent = String(message || '');
+        if (btn) {
+            btn.disabled = !!isBusy;
+            btn.innerHTML = isBusy
+                ? '<i class="fas fa-spinner fa-spin"></i> Refreshing...'
+                : '<i class="fas fa-sync"></i> Refresh';
+        }
+    }
+
+    function formatDashboardRefreshTime() {
+        try {
+            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function syncAnalysisUrl(filter, keyword) {
+        if (!window.history || !window.history.replaceState) return;
+        var nextUrl = '/analysis?filter=' + encodeURIComponent(filter || 'all') + '&q=' + encodeURIComponent(keyword || '');
+        window.history.replaceState({}, '', nextUrl);
+    }
+
+    function applyAnalysisSummary(summary, filter, keyword) {
+        updateAnalysisStats(summary);
+        drawAnalysisCharts(summary);
+        if (window.analysisBootstrap) {
+            window.analysisBootstrap.filter = filter || 'all';
+            window.analysisBootstrap.keyword = keyword || '';
+            window.analysisBootstrap.statusCounts = summary.status_counts || { SAFE: 0, WARNING: 0, DANGEROUS: 0 };
+            window.analysisBootstrap.typeCounts = summary.type_counts || {};
+            window.analysisBootstrap.typeRisk = summary.type_risk || {};
+            window.analysisBootstrap.trend = summary.trend || { labels: [], values: [] };
+        }
+        syncAnalysisUrl(filter, keyword);
+        setAnalysisRefreshStatus('Dashboard updated at ' + formatDashboardRefreshTime() + '.', false);
+    }
+
+    function stopAnalysisAutoRefresh() {
+        if (analysisAutoRefreshTimer) {
+            window.clearInterval(analysisAutoRefreshTimer);
+            analysisAutoRefreshTimer = null;
+        }
+    }
+
+    function startAnalysisAutoRefresh() {
+        stopAnalysisAutoRefresh();
+        analysisAutoRefreshTimer = window.setInterval(function () {
+            if (document.hidden) return;
+            window.refreshAnalysisDashboard(true);
+        }, 30000);
+    }
+
+    function loadDashboardRefreshPreference() {
+        if (!window.analysisBootstrap) return;
+        apiFetchJson('/api/settings')
+            .then(function (settings) {
+                if (settings && settings.auto_refresh) {
+                    startAnalysisAutoRefresh();
+                    setAnalysisRefreshStatus('Auto refresh is active. Last check at ' + formatDashboardRefreshTime() + '.', false);
+                } else {
+                    stopAnalysisAutoRefresh();
+                }
+            })
+            .catch(function () {
+                stopAnalysisAutoRefresh();
+            });
+    }
+
+    window.refreshAnalysisDashboard = function refreshAnalysisDashboard(isSilent) {
         const filter = (byId('analysisFilter') || {}).value || 'all';
         const keyword = (byId('analysisSearch') || {}).value || '';
+        if (!isSilent) {
+            setAnalysisRefreshStatus('Refreshing dashboard data...', true);
+        }
 
         apiFetchJson('/api/analysis-summary?filter=' + encodeURIComponent(filter) + '&q=' + encodeURIComponent(keyword))
             .then(function (summary) {
-                updateAnalysisStats(summary);
-                drawAnalysisCharts(summary);
+                applyAnalysisSummary(summary, filter, keyword);
             })
             .catch(function () {
-                alert('Unable to refresh analysis right now. Please retry.');
+                setAnalysisRefreshStatus(
+                    isSilent
+                        ? 'Auto refresh could not update dashboard right now.'
+                        : 'Unable to refresh analysis right now. Please retry.',
+                    false
+                );
+                if (!isSilent) {
+                    alert('Unable to refresh analysis right now. Please retry.');
+                }
             });
     };
 
@@ -2016,7 +2878,10 @@
     };
 
     window.exportReport = function exportReport() {
-        window.print();
+        const filter = (byId('reportFilter') || {}).value || 'all';
+        const keyword = (byId('reportSearch') || {}).value || '';
+        const url = '/reports/export/pdf?filter=' + encodeURIComponent(filter) + '&q=' + encodeURIComponent(keyword);
+        window.location.href = url;
     };
 
     window.filterSettings = function filterSettings() {
@@ -2065,10 +2930,31 @@
             body: JSON.stringify({ channel: channel })
         })
             .then(function (data) {
-                alert(data.message || 'Verification code sent.');
+                var msg = data.message || 'Verification code sent.';
+                if (data.preview_code) {
+                    msg += '\n\nTemporary code: ' + data.preview_code;
+                }
+                alert(msg);
             })
             .catch(function (err) {
                 alert((err && err.message) ? err.message : 'Could not send verification code.');
+            });
+    };
+
+    window.requestForgotPasswordCode = function requestForgotPasswordCode() {
+        const email = ((byId('forgotEmailInput') || {}).value || '').trim();
+        if (!email || email.indexOf('@') < 0) return showInvalidInput('Enter a valid Gmail or email address.');
+
+        apiFetchJson('/api/public-request-password-code', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({ email: email })
+        })
+            .then(function (data) {
+                setForgotPasswordNotice(data.message || 'Verification code sent.', data.delivery_mode === 'email' ? '' : 'warning');
+            })
+            .catch(function (err) {
+                setForgotPasswordNotice((err && err.message) ? err.message : 'Could not send reset code.', 'warning');
             });
     };
 
@@ -2101,6 +2987,39 @@
             })
             .catch(function (err) {
                 alert((err && err.message) ? err.message : 'Unable to change password.');
+            });
+    };
+
+    window.submitForgotPasswordChange = function submitForgotPasswordChange() {
+        const email = ((byId('forgotEmailInput') || {}).value || '').trim();
+        const code = ((byId('forgotOtpCode') || {}).value || '').trim();
+        const newPassword = (byId('forgotNewPassword') || {}).value || '';
+        const confirmPassword = (byId('forgotConfirmPassword') || {}).value || '';
+
+        if (!email || email.indexOf('@') < 0) return showInvalidInput('Enter the same Gmail or email address first.');
+        if (!/^\d{6}$/.test(code)) return showInvalidInput('Enter 6-digit verification code.');
+        if (newPassword.length < 8) return showInvalidInput('Password must be at least 8 characters.');
+        if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+            return showInvalidInput('Password must include uppercase, lowercase, and number.');
+        }
+        if (newPassword !== confirmPassword) return showInvalidInput('New password and confirm password do not match.');
+
+        apiFetchJson('/api/public-change-password-with-code', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({
+                email: email,
+                code: code,
+                new_password: newPassword,
+                confirm_password: confirmPassword
+            })
+        })
+            .then(function (data) {
+                setForgotPasswordNotice(data.message || 'Password changed successfully.', '');
+                window.location.href = '/login';
+            })
+            .catch(function (err) {
+                setForgotPasswordNotice((err && err.message) ? err.message : 'Unable to change password.', 'warning');
             });
     };
 
@@ -2205,12 +3124,12 @@
     function initAnalysisPage() {
         if (!window.analysisBootstrap) return;
 
-        drawAnalysisCharts({
+        applyAnalysisSummary({
             status_counts: window.analysisBootstrap.statusCounts,
             type_counts: window.analysisBootstrap.typeCounts,
             type_risk: window.analysisBootstrap.typeRisk,
             trend: window.analysisBootstrap.trend
-        });
+        }, window.analysisBootstrap.filter || 'all', window.analysisBootstrap.keyword || '');
 
         const filterSelect = byId('analysisFilter');
         const searchInput = byId('analysisSearch');
@@ -2229,6 +3148,7 @@
                 }
             });
         }
+        loadDashboardRefreshPreference();
     }
 
     function applyThemeState(useDark, persistLocal) {
@@ -2391,6 +3311,9 @@
         bindAttackCards();
         initEncryptionToolUi();
         initAnalysisPage();
+        initFaceIntelPage();
+        initSiteSearch();
+        initPasswordVisibilityToggles();
         initMonetizationPage();
         initPwaInstall();
         initButtonClickFlash();
@@ -2398,7 +3321,8 @@
         if (
             window.location.pathname.indexOf('/features/') === 0 &&
             window.location.pathname.indexOf('/features/chatbot') !== 0 &&
-            window.location.pathname.indexOf('/features/assistant') !== 0
+            window.location.pathname.indexOf('/features/assistant') !== 0 &&
+            window.location.pathname.indexOf('/features/attack') !== 0
         ) {
             updateModuleInsight({
                 score: 0,

@@ -2,14 +2,14 @@
 
 {% block content %}
 <div class="analyzer-container">
-    <h1><i class="fas fa-key"></i> Encryption Tools</h1>
-    <p class="muted-text">Professional text security toolkit for encryption, decryption, hashing, and Base64 conversion.</p>
+    <h1><i class="fas fa-key"></i> Encrypt / Decrypt Tools</h1>
+    <p class="muted-text">Professional text security toolkit for encrypt, decrypt, hashing, and Base64 conversion.</p>
 
     <div class="settings-section mt-1 encryption-guide">
         <h3><i class="fas fa-info-circle"></i> Quick Guide</h3>
         <ul class="report-threats">
             <li>Select one operation from the dropdown.</li>
-            <li>For Encrypt/Decrypt, enter a strong secret key.</li>
+            <li>For Encrypt and Decrypt, use the same secret key.</li>
             <li>Click Run Tool to generate result on this page.</li>
             <li>Use Copy Output to safely reuse generated result.</li>
         </ul>
@@ -18,8 +18,8 @@
     <div class="input-section mt-1 encryption-inputs">
         <label for="encryptionActionInput">Operation</label>
         <select id="encryptionActionInput">
-            <option value="encrypt_text">Encrypt Text (Secret Key)</option>
-            <option value="decrypt_text">Decrypt Text (Secret Key)</option>
+            <option value="encrypt_text">Encrypt Text</option>
+            <option value="decrypt_text">Decrypt Cipher Text</option>
             <option value="sha256">SHA-256 Hash</option>
             <option value="base64_encode">Base64 Encode</option>
             <option value="base64_decode">Base64 Decode</option>
@@ -27,15 +27,40 @@
 
         <label for="encryptionSecretInput" id="encryptionSecretLabel">Secret Key</label>
         <div class="secret-field-wrap" id="encryptionSecretWrap">
-            <input type="password" id="encryptionSecretInput" placeholder="Example: MyStrongKey2026!">
+            <input type="password" id="encryptionSecretInput" placeholder="Enter same key for encrypt and decrypt">
             <button type="button" class="secret-toggle-btn" id="encryptionSecretToggle" aria-label="Show or hide secret key">
                 <i class="fas fa-eye"></i>
+            </button>
+        </div>
+        <div class="encryption-secret-actions">
+            <button id="encryptionGenerateKeyBtn" type="button" class="btn-secondary">
+                <i class="fas fa-key"></i> Generate Key
+            </button>
+            <button id="encryptionCopyKeyBtn" type="button" class="btn-secondary">
+                <i class="fas fa-copy"></i> Copy Key
             </button>
         </div>
 
         <label for="encryptionTextInput" id="encryptionTextLabel">Input Text</label>
         <textarea id="encryptionTextInput" placeholder="Example: Hello Cyber World"></textarea>
-        <small id="encryptionHintText" class="muted-text">Tip: Secret key is required only for Encrypt/Decrypt.</small>
+        <small id="encryptionHintText" class="muted-text">Tip: Enter the same secret key to decrypt your message.</small>
+
+        <div id="encryptionDecryptSourceWrap" class="threat-details mt-1 encryption-decrypt-source hidden">
+            <h3>Cipher Text</h3>
+            <textarea id="encryptionDecryptSource" readonly></textarea>
+            <small class="muted-text">This keeps your cipher text visible while the decrypted message shows below.</small>
+        </div>
+
+        <div class="threat-details mt-1 encryption-output-preview">
+            <h3 id="encryptionOutputLabel">Output</h3>
+            <textarea id="encryptionOutput" readonly></textarea>
+            <small class="muted-text">Your result will appear here.</small>
+            <div class="encryption-output-actions">
+                <button id="encryptionUseOutputBtn" type="button" class="btn-secondary">
+                    <i class="fas fa-unlock-alt"></i> Use Output For Decrypt
+                </button>
+            </div>
+        </div>
 
         <div class="toolbar-row mt-1">
             <button id="encryptionRunBtn" type="button" class="btn-analyze"><i class="fas fa-cogs"></i> Run Tool</button>
@@ -71,13 +96,9 @@
             </div>
         </div>
         <div class="threat-details mt-1">
-            <h3>Output</h3>
-            <textarea id="encryptionOutput" readonly></textarea>
-        </div>
-        <div class="threat-details mt-1">
             <h3>Security Notes</h3>
             <ul id="encryptionNotesList" class="report-threats">
-                <li>Run an operation to load security notes.</li>
+                <li>Run Tool to load operation-specific security notes.</li>
             </ul>
         </div>
     </div>

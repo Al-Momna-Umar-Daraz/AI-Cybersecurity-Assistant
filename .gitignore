@@ -13,6 +13,10 @@ env/
 .env
 .env.local
 .env.*.local
+google-service-account.json
+service-account.json
+google-vision-key.json
+credentials/
 
 # Runtime / database
 *.db
@@ -37,3 +41,9 @@ repo-data/
 # User-generated uploads
 static/uploads/*
 !static/uploads/.gitkeep
+data/face_db/
+data/face_db_images/
+data/face_queries/
+data/archive*/
+data/curated/
+data/datasets/

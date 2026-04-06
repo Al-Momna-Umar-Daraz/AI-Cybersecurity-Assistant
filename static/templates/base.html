@@ -15,6 +15,7 @@
     {% endif %}
 </head>
 <body{% if current_dark_mode %} class="dark-mode"{% endif %} data-dark-mode="{% if current_dark_mode %}1{% else %}0{% endif %}">
+    <a href="#mainContent" class="skip-link">Skip To Content</a>
     <header class="header">
         <div class="header-left">
             <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle sidebar">
@@ -34,17 +35,24 @@
             </div>
         </div>
 
+        <form class="header-search" id="siteQuickSearchForm">
+            <label class="sr-only" for="siteQuickSearch">Search website tools</label>
+            <i class="fas fa-magnifying-glass"></i>
+            <input id="siteQuickSearch" type="search" list="siteQuickSearchList" placeholder="Search tools, reports, dashboard">
+            <button type="submit" class="header-search-btn">Go</button>
+        </form>
+
         <nav class="header-nav">
-            <a href="/" class="nav-link"><i class="fas fa-home"></i> Home</a>
+            <a href="/" class="nav-link{% if request.path == '/' %} active{% endif %}"><i class="fas fa-home"></i> Home</a>
             {% if logged_in %}
-            <a href="/features/command" class="nav-link"><i class="fas fa-terminal"></i> Command</a>
-            <a href="/features/password" class="nav-link"><i class="fas fa-lock"></i> Password</a>
-            <a href="/features/url" class="nav-link"><i class="fas fa-globe"></i> URL</a>
-            <a href="/features/breach" class="nav-link"><i class="fas fa-user-shield"></i> Breach</a>
-            <a href="/features/port-scan" class="nav-link"><i class="fas fa-network-wired"></i> Ports</a>
-            <a href="/features/network-scan" class="nav-link"><i class="fas fa-sitemap"></i> Network</a>
-            <a href="/features/encryption" class="nav-link"><i class="fas fa-key"></i> Encrypt</a>
-            <a href="/features/face-intel" class="nav-link"><i class="fas fa-camera"></i> Face Intel</a>
+            <a href="/features/command" class="nav-link{% if request.path.startswith('/features/command') %} active{% endif %}"><i class="fas fa-terminal"></i> Command</a>
+            <a href="/features/password" class="nav-link{% if request.path.startswith('/features/password') %} active{% endif %}"><i class="fas fa-lock"></i> Password</a>
+            <a href="/features/url" class="nav-link{% if request.path.startswith('/features/url') %} active{% endif %}"><i class="fas fa-globe"></i> URL</a>
+            <a href="/features/breach" class="nav-link{% if request.path.startswith('/features/breach') %} active{% endif %}"><i class="fas fa-user-shield"></i> Email Breach</a>
+            <a href="/features/port-scan" class="nav-link{% if request.path.startswith('/features/port-scan') %} active{% endif %}"><i class="fas fa-network-wired"></i> Ports</a>
+            <a href="/features/network-scan" class="nav-link{% if request.path.startswith('/features/network-scan') %} active{% endif %}"><i class="fas fa-sitemap"></i> Network</a>
+            <a href="/features/encryption" class="nav-link{% if request.path.startswith('/features/encryption') %} active{% endif %}"><i class="fas fa-key"></i> Encrypt</a>
+            <a href="/features/face-intel" class="nav-link{% if request.path.startswith('/features/face-intel') %} active{% endif %}"><i class="fas fa-camera"></i> Face Intel</a>
             <div class="top-more-wrap">
                 <button id="topMoreBtn" class="nav-link more-btn" type="button" aria-expanded="false" aria-controls="topMorePanel">
                     <i class="fas fa-bars"></i> More
@@ -83,8 +91,8 @@
             </div>
             <button id="installAppBtn" class="nav-link install-btn hidden" type="button"><i class="fas fa-download"></i> Install App</button>
             {% else %}
-            <a href="/login" class="nav-link"><i class="fas fa-sign-in-alt"></i> Login</a>
-            <a href="/register" class="nav-link"><i class="fas fa-user-plus"></i> Register</a>
+            <a href="/login" class="nav-link{% if request.path.startswith('/login') %} active{% endif %}"><i class="fas fa-sign-in-alt"></i> Login</a>
+            <a href="/register" class="nav-link{% if request.path.startswith('/register') %} active{% endif %}"><i class="fas fa-user-plus"></i> Register</a>
             {% endif %}
         </nav>
     </header>
@@ -105,32 +113,32 @@
 
             <div id="quickToolsList" class="quick-tools-list">
             {% if logged_in %}
-            <a href="/" class="sidebar-link"><i class="fas fa-home"></i> Home</a>
-            <a href="/features/command" class="sidebar-link"><i class="fas fa-terminal"></i> Command Analyzer</a>
-            <a href="/features/password" class="sidebar-link"><i class="fas fa-lock"></i> Password Checker</a>
-            <a href="/features/url" class="sidebar-link"><i class="fas fa-globe"></i> URL Scanner</a>
-            <a href="/features/breach" class="sidebar-link"><i class="fas fa-user-shield"></i> Email Breach Checker</a>
-            <a href="/features/port-scan" class="sidebar-link"><i class="fas fa-network-wired"></i> Port Scanner</a>
-            <a href="/features/network-scan" class="sidebar-link"><i class="fas fa-sitemap"></i> Network AI Scan</a>
-            <a href="/features/encryption" class="sidebar-link"><i class="fas fa-key"></i> Encryption Tools</a>
-            <a href="/features/face-intel" class="sidebar-link"><i class="fas fa-camera"></i> Face Recognition Intel</a>
-            <a href="/features/attack" class="sidebar-link"><i class="fas fa-bug"></i> Attack Simulator</a>
+            <a href="/analysis" class="sidebar-link{% if request.path.startswith('/analysis') %} active{% endif %}"><i class="fas fa-chart-pie"></i> Dashboard</a>
+            <a href="/" class="sidebar-link{% if request.path == '/' %} active{% endif %}"><i class="fas fa-home"></i> Home</a>
+            <a href="/features/command" class="sidebar-link{% if request.path.startswith('/features/command') %} active{% endif %}"><i class="fas fa-terminal"></i> Command Analyzer</a>
+            <a href="/features/password" class="sidebar-link{% if request.path.startswith('/features/password') %} active{% endif %}"><i class="fas fa-lock"></i> Password Checker</a>
+            <a href="/features/url" class="sidebar-link{% if request.path.startswith('/features/url') %} active{% endif %}"><i class="fas fa-globe"></i> URL Scanner</a>
+            <a href="/features/breach" class="sidebar-link{% if request.path.startswith('/features/breach') %} active{% endif %}"><i class="fas fa-user-shield"></i> Email Breach Checker</a>
+            <a href="/features/port-scan" class="sidebar-link{% if request.path.startswith('/features/port-scan') %} active{% endif %}"><i class="fas fa-network-wired"></i> Port Scanner</a>
+            <a href="/features/network-scan" class="sidebar-link{% if request.path.startswith('/features/network-scan') %} active{% endif %}"><i class="fas fa-sitemap"></i> Network AI Scan</a>
+            <a href="/features/encryption" class="sidebar-link{% if request.path.startswith('/features/encryption') %} active{% endif %}"><i class="fas fa-key"></i> Encryption Tools</a>
+            <a href="/features/face-intel" class="sidebar-link{% if request.path.startswith('/features/face-intel') %} active{% endif %}"><i class="fas fa-camera"></i> Face Recognition Intel</a>
+            <a href="/features/attack" class="sidebar-link{% if request.path.startswith('/features/attack') %} active{% endif %}"><i class="fas fa-bug"></i> Attack Simulator</a>
 
             <hr>
 
-            <a href="/analysis" class="sidebar-link"><i class="fas fa-chart-pie"></i> Analysis</a>
-            <a href="/reports" class="sidebar-link"><i class="fas fa-file-export"></i> Reports</a>
-            <a href="/monetization" class="sidebar-link"><i class="fas fa-coins"></i> Monetization</a>
-            <a href="/settings" class="sidebar-link"><i class="fas fa-sliders-h"></i> Settings</a>
-            <a href="/profile" class="sidebar-link"><i class="fas fa-id-card"></i> My Profile</a>
+            <a href="/reports" class="sidebar-link{% if request.path.startswith('/reports') %} active{% endif %}"><i class="fas fa-file-export"></i> Reports</a>
+            <a href="/monetization" class="sidebar-link{% if request.path.startswith('/monetization') %} active{% endif %}"><i class="fas fa-coins"></i> Monetization</a>
+            <a href="/settings" class="sidebar-link{% if request.path.startswith('/settings') %} active{% endif %}"><i class="fas fa-sliders-h"></i> Settings</a>
+            <a href="/profile" class="sidebar-link{% if request.path.startswith('/profile') %} active{% endif %}"><i class="fas fa-id-card"></i> My Profile</a>
             {% else %}
-            <a href="/login" class="sidebar-link"><i class="fas fa-sign-in-alt"></i> Login</a>
-            <a href="/register" class="sidebar-link"><i class="fas fa-user-plus"></i> Create Account</a>
+            <a href="/login" class="sidebar-link{% if request.path.startswith('/login') %} active{% endif %}"><i class="fas fa-sign-in-alt"></i> Login</a>
+            <a href="/register" class="sidebar-link{% if request.path.startswith('/register') %} active{% endif %}"><i class="fas fa-user-plus"></i> Create Account</a>
             {% endif %}
             </div>
         </aside>
 
-        <main class="content">
+        <main class="content" id="mainContent">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                 <div class="flash-stack">
@@ -140,6 +148,22 @@
                 </div>
                 {% endif %}
             {% endwith %}
+            <datalist id="siteQuickSearchList">
+                <option value="dashboard"></option>
+                <option value="home"></option>
+                <option value="command analyzer"></option>
+                <option value="password checker"></option>
+                <option value="url scanner"></option>
+                <option value="email breach"></option>
+                <option value="port scanner"></option>
+                <option value="network scan"></option>
+                <option value="encryption"></option>
+                <option value="face intel"></option>
+                <option value="reports"></option>
+                <option value="settings"></option>
+                <option value="profile"></option>
+                <option value="chatbot"></option>
+            </datalist>
             {% block content %}{% endblock %}
         </main>
     </div>
@@ -172,6 +196,7 @@
     </footer>
 
     <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='script.js', v=static_version) }}"></script>
+    <script nonce="{{ csp_nonce }}" type="module" src="https://unpkg.com/@lottiefiles/dotlottie-wc@latest/dist/dotlottie-wc.js"></script>
     {% if ads_enabled %}
     <script nonce="{{ csp_nonce }}">
         (adsbygoogle = window.adsbygoogle || []).push({});
