@@ -223,7 +223,7 @@
         '/features/linux-lab': ['ls -la /var/log', 'chmod 777 /tmp/data', 'sudo rm -rf /'],
         '/features/chatbot': ['How do I harden a Linux server?', 'How can I improve password policy?', 'How to reduce phishing risk?'],
         '/features/attack': ['sql', 'xss', 'ddos'],
-        '/features/face-intel': ['Upload a clear face photo and click Scan Face Match']
+        '/features/face-intel': ['Face Intelligence is coming soon. This module is temporarily disabled.']
     };
     var MODULE_INPUT_IDS = {
         '/features/command': ['commandInput'],
@@ -3267,23 +3267,58 @@
         }
 
         var deferredPrompt = null;
-        var installBtn = byId('installAppBtn');
+        var installButtons = Array.prototype.slice.call(document.querySelectorAll('[data-install-app]'));
+        var installCallout = byId('installCallout');
+
+        function isStandaloneMode() {
+            return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        }
+
+        function setInstallUiVisible(visible) {
+            installButtons.forEach(function (btn) {
+                btn.classList.toggle('hidden', !visible);
+            });
+            if (installCallout) {
+                installCallout.classList.toggle('hidden', !visible);
+            }
+        }
+
+        function showInstallFallbackHelp() {
+            alert('To install this website, open your browser menu and choose "Install App" or "Add to Home Screen".');
+        }
+
+        if (isStandaloneMode()) {
+            setInstallUiVisible(false);
+            return;
+        }
+
+        setInstallUiVisible(true);
+
         window.addEventListener('beforeinstallprompt', function (e) {
             e.preventDefault();
             deferredPrompt = e;
-            if (installBtn) installBtn.classList.remove('hidden');
+            setInstallUiVisible(true);
         });
 
-        if (installBtn) {
+        installButtons.forEach(function (installBtn) {
+            if (!installBtn || installBtn.dataset.boundInstallPrompt) return;
+            installBtn.dataset.boundInstallPrompt = '1';
             installBtn.addEventListener('click', function () {
-                if (!deferredPrompt) return;
+                if (!deferredPrompt) {
+                    showInstallFallbackHelp();
+                    return;
+                }
                 deferredPrompt.prompt();
                 deferredPrompt.userChoice.finally(function () {
                     deferredPrompt = null;
-                    installBtn.classList.add('hidden');
+                    setInstallUiVisible(false);
                 });
             });
-        }
+        });
+
+        window.addEventListener('appinstalled', function () {
+            setInstallUiVisible(false);
+        });
     }
 
     function initButtonClickFlash() {

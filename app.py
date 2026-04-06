@@ -4683,11 +4683,7 @@ def attack_simulator():
 @app.route('/features/face-intel')
 @login_required
 def face_intel():
-    return render_template(
-        'features/face_intel.html',
-        trained_face_gallery_enabled=is_trained_face_gallery_enabled(),
-        emotion_model_enabled=is_emotion_model_enabled(),
-    )
+    return render_template('features/face_intel.html')
 
 
 @app.route('/forgot-password')
@@ -4699,32 +4695,7 @@ def forgot_password():
 
 @app.route('/api/face-intel/image', methods=['GET'])
 def face_intel_image_api():
-    raw_path = str(request.args.get('path') or '').strip()
-    if not raw_path:
-        return jsonify({'ok': False, 'message': 'Image path is required.'}), 400
-    try:
-        decoded_path = url_parse.unquote(raw_path)
-    except Exception:
-        decoded_path = raw_path
-    candidate = BASE_DIR / decoded_path
-    try:
-        resolved = candidate.resolve()
-        base = BASE_DIR.resolve()
-        allowed_prefixes = [
-            (BASE_DIR / 'data' / 'curated').resolve(),
-            (BASE_DIR / 'data' / 'face_db_images').resolve(),
-            (BASE_DIR / 'data' / 'face_queries').resolve(),
-        ]
-        if not str(resolved).startswith(str(base)) or not resolved.exists() or not resolved.is_file():
-            return jsonify({'ok': False, 'message': 'Image was not found.'}), 404
-        if not any(str(resolved).startswith(str(prefix)) for prefix in allowed_prefixes):
-            return jsonify({'ok': False, 'message': 'Image was not found.'}), 404
-    except Exception:
-        return jsonify({'ok': False, 'message': 'Invalid image path.'}), 400
-    if resolved.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
-        return jsonify({'ok': False, 'message': 'Unsupported image format.'}), 400
-    mimetype = mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream'
-    return send_file(resolved, mimetype=mimetype, conditional=True, max_age=3600)
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/analysis')
@@ -5065,121 +5036,37 @@ def create_bank_transfer_api():
 @app.route('/api/face-intel', methods=['POST'])
 @api_login_required
 def face_intel_api():
-    consent = (request.form.get('consent') or '').strip().lower()
-    if consent not in {'yes', 'true', '1'}:
-        return jsonify(
-            {
-                'ok': False,
-                'message': 'Consent required: only scan images you are authorized to analyze.',
-            }
-        ), 400
-
-    image = request.files.get('image')
-    result = run_facecheck_search(image)
-    if not result.get('ok'):
-        return jsonify(result), 400
-    try:
-        try:
-            image.stream.seek(0)
-        except Exception:
-            pass
-        image_info = read_image_upload(image, required=True)
-        quality = assess_face_image_quality(image_info) if image_info.get('ok') else {}
-        emotion = predict_face_emotion(image_info) if image_info.get('ok') else {}
-        if quality.get('preview'):
-            result['query_preview'] = result.get('query_preview') or quality.get('preview')
-        if emotion.get('ok'):
-            result['emotion'] = emotion
-    except Exception:
-        pass
-
-    save_scan_report(
-        int(g.user['id']),
-        f"facecheck:{(image.filename if image else 'unknown')[:80]}",
-        'facecheck',
-        int(result.get('score', 0)),
-        result.get('status', 'UNKNOWN'),
-        result.get('findings', []),
-    )
-    return jsonify(result)
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/api/face-intel/local-faces', methods=['GET'])
 @api_login_required
 def local_face_list_api():
-    return jsonify(get_local_face_records_summary(int(g.user['id'])))
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/api/face-intel/local-enroll', methods=['POST'])
 @api_login_required
 def local_face_enroll_api():
-    consent = (request.form.get('consent') or '').strip().lower()
-    if consent not in {'yes', 'true', '1'}:
-        return jsonify({'ok': False, 'message': 'Consent required before saving a face profile.'}), 400
-
-    person_name = (request.form.get('person_name') or '').strip()
-    image = request.files.get('image')
-    result = enroll_local_face_record(int(g.user['id']), person_name, image)
-    if not result.get('ok'):
-        return jsonify(result), 400
-    return jsonify(result)
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/api/face-intel/local-compare', methods=['POST'])
 @api_login_required
 def local_face_compare_api():
-    consent = (request.form.get('consent') or '').strip().lower()
-    if consent not in {'yes', 'true', '1'}:
-        return jsonify({'ok': False, 'message': 'Consent required before comparing face profiles.'}), 400
-
-    image = request.files.get('image')
-    result = compare_local_face_database(int(g.user['id']), image)
-    if not result.get('ok'):
-        return jsonify(result), 400
-
-    save_scan_report(
-        int(g.user['id']),
-        f"local-face-db:{(image.filename if image else 'unknown')[:80]}",
-        'facecheck',
-        int(result.get('score', 0)),
-        result.get('status', 'UNKNOWN'),
-        result.get('findings', []),
-    )
-    return jsonify(result)
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/api/face-intel/gallery-compare', methods=['POST'])
 @api_login_required
 def trained_gallery_compare_api():
-    consent = (request.form.get('consent') or '').strip().lower()
-    if consent not in {'yes', 'true', '1'}:
-        return jsonify({'ok': False, 'message': 'Consent required before comparing the trained gallery.'}), 400
-
-    image = request.files.get('image')
-    result = compare_trained_face_gallery(int(g.user['id']), image)
-    if not result.get('ok'):
-        return jsonify(result), 400
-
-    save_scan_report(
-        int(g.user['id']),
-        f"trained-face-gallery:{(image.filename if image else 'unknown')[:80]}",
-        'facecheck',
-        int(result.get('score', 0)),
-        result.get('status', 'UNKNOWN'),
-        result.get('findings', []),
-    )
-    return jsonify(result)
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/api/face-intel/local-delete', methods=['POST'])
 @api_login_required
 def local_face_delete_api():
-    payload = request.json or {}
-    record_id = (payload.get('record_id') or '').strip()
-    result = delete_local_face_record(int(g.user['id']), record_id)
-    if not result.get('ok'):
-        return jsonify(result), 400
-    return jsonify(result)
+    return jsonify({'ok': False, 'message': 'Face Intelligence is coming soon.'}), 410
 
 
 @app.route('/api/analysis-summary', methods=['GET'])
