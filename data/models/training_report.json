@@ -1,0 +1,63 @@
+{
+  "emotion": {
+    "dataset_dir": "data/curated/emotion_full_v2",
+    "samples": 595,
+    "labels": [
+      "angry",
+      "disgust",
+      "fear",
+      "happy",
+      "neutral",
+      "sad",
+      "surprise"
+    ],
+    "class_counts": {
+      "angry": 80,
+      "disgust": 80,
+      "fear": 80,
+      "happy": 115,
+      "neutral": 80,
+      "sad": 80,
+      "surprise": 80
+    },
+    "cv_accuracy_mean": 0.7899,
+    "cv_accuracy_std": 0.0092,
+    "model_path": "data/models/emotion_model.joblib",
+    "feature_shape": 2304,
+    "source_examples": [
+      "data/curated/emotion_full_v2/angry/angry__Training_15512449.jpg",
+      "data/curated/emotion_full_v2/angry/angry__Training_15512449_aug_001.jpg",
+      "data/curated/emotion_full_v2/angry/angry__Training_15512449_aug_015.jpg",
+      "data/curated/emotion_full_v2/angry/angry__Training_15512449_aug_016.jpg",
+      "data/curated/emotion_full_v2/angry/angry__Training_15512449_aug_030.jpg"
+    ]
+  },
+  "lfw_identity": {
+    "dataset_dir": "data/curated/lfw_full_v2",
+    "samples": 700,
+    "people": 20,
+    "holdout_accuracy": 0.9214,
+    "classifier_path": "data/models/lfw_identity_classifier.joblib",
+    "index_path": "data/models/lfw_identity_index.joblib",
+    "gallery_path": "data/models/lfw_identity_gallery.json",
+    "sample_people": [
+      "Alejandro_Toledo",
+      "Ariel_Sharon",
+      "Arnold_Schwarzenegger",
+      "Colin_Powell",
+      "Donald_Rumsfeld",
+      "George_W_Bush",
+      "Gerhard_Schroeder",
+      "Gloria_Macapagal_Arroyo",
+      "Hugo_Chavez",
+      "Jacques_Chirac"
+    ],
+    "test_examples": [
+      "data/curated/lfw_full_v2/John_Ashcroft/John_Ashcroft__John_Ashcroft_0012_aug_018.jpg",
+      "data/curated/lfw_full_v2/Junichiro_Koizumi/Junichiro_Koizumi__Junichiro_Koizumi_0014.jpg",
+      "data/curated/lfw_full_v2/Hugo_Chavez/Hugo_Chavez__Hugo_Chavez_0021_aug_019.jpg",
+      "data/curated/lfw_full_v2/Jean_Chretien/Jean_Chretien__Jean_Chretien_0025_aug_004.jpg",
+      "data/curated/lfw_full_v2/Jennifer_Capriati/Jennifer_Capriati__Jennifer_Capriati_0032_aug_013.jpg"
+    ]
+  }
+}

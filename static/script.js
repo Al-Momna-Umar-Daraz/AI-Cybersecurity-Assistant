@@ -223,7 +223,7 @@
         '/features/linux-lab': ['ls -la /var/log', 'chmod 777 /tmp/data', 'sudo rm -rf /'],
         '/features/chatbot': ['How do I harden a Linux server?', 'How can I improve password policy?', 'How to reduce phishing risk?'],
         '/features/attack': ['sql', 'xss', 'ddos'],
-        '/features/face-intel': ['Face Intelligence is coming soon. This module is temporarily disabled.']
+        '/features/face-intel': ['Upload a clear face photo and click Scan Face Match']
     };
     var MODULE_INPUT_IDS = {
         '/features/command': ['commandInput'],
