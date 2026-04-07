@@ -5,8 +5,11 @@
     <h1><i class="fas fa-user-shield"></i> Email Breach Checker</h1>
     <p class="muted-text">Enter your email and open Have I Been Pwned directly for live breach results.</p>
 
-    <form id="breachHibpForm" class="input-section" action="https://haveibeenpwned.com/" method="get" onsubmit="return submitEmailBreachForm(event)">
+    <form id="breachHibpForm" class="input-section" action="https://haveibeenpwned.com/" method="get">
         <input type="email" id="breachEmailInput" name="Account" placeholder="Enter email (e.g. yourname@gmail.com)" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button id="breachOpenHibpBtn" type="submit" class="btn-analyze breach-open-btn">
+            <i class="fas fa-external-link-alt"></i> Check Email Breach
+        </button>
     </form>
 
     <div class="settings-section mt-1">
@@ -16,12 +19,6 @@
             <li>Click the button below.</li>
             <li>You will go to Have I Been Pwned with your email already added in the URL.</li>
         </ul>
-    </div>
-
-    <div class="input-section mt-1">
-        <button id="breachOpenHibpBtn" type="button" onclick="checkEmailBreach()" class="btn-analyze breach-open-btn">
-            <i class="fas fa-external-link-alt"></i> Check Email Breach
-        </button>
     </div>
 
     <div id="breachOutputSection" class="result-section">
@@ -49,155 +46,17 @@
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
 (function () {
-    function byId(id) { return document.getElementById(id); }
-    function safeText(v) {
-        return String(v || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-    function riskClass(score) {
-        if (score < 30) return 'safe';
-        if (score < 70) return 'warning';
-        return 'danger';
-    }
-    function validEmail(email) {
-        return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email || '').trim());
-    }
-    function computeLocalRisk(email) {
-        var e = String(email || '').trim().toLowerCase();
-        var domain = e.indexOf('@') >= 0 ? e.split('@')[1] : '';
-        var score = 15;
-        var notes = [];
-        if (!domain) {
-            score = 45;
-            notes.push('Email domain could not be parsed.');
-        } else {
-            if (domain.indexOf('-') >= 0) {
-                score += 18;
-                notes.push('Domain contains hyphen(s), review carefully.');
-            }
-            if ((domain.match(/\./g) || []).length >= 2) {
-                score += 12;
-                notes.push('Multi-level domain detected, verify authenticity.');
-            }
-            if (/(\.ru|\.tk|\.xyz|\.top|\.click)$/.test(domain)) {
-                score += 35;
-                notes.push('Higher-risk TLD pattern detected.');
-            }
+    const form = document.getElementById('breachHibpForm');
+    const emailInput = document.getElementById('breachEmailInput');
+    if (!form || !emailInput) return;
+    form.addEventListener('submit', function (event) {
+        const email = String(emailInput.value || '').trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            event.preventDefault();
+            alert('Enter a valid email address and try again.');
+            return;
         }
-        score = Math.max(0, Math.min(100, score));
-        var status = score < 30 ? 'SAFE' : (score < 70 ? 'WARNING' : 'DANGEROUS');
-        if (!notes.length) notes.push('No high-risk domain pattern detected locally.');
-        return { score: score, status: status, domain: domain || 'unknown', notes: notes };
-    }
-
-    function renderOutput(data) {
-        var section = byId('breachOutputSection');
-        var scoreNode = byId('breachOutputRisk');
-        var statusNode = byId('breachOutputStatus');
-        var msgNode = byId('breachOutputMessage');
-        var listNode = byId('breachOutputDetails');
-        var circleNode = byId('breachOutputCircle');
-        if (!section || !scoreNode || !statusNode || !msgNode || !listNode || !circleNode) return;
-
-        scoreNode.textContent = String(Number(data.score || 0));
-        statusNode.textContent = String(data.status || 'UNKNOWN');
-        msgNode.textContent = String(data.message || '-');
-        circleNode.className = 'score-circle ' + riskClass(Number(data.score || 0));
-        listNode.innerHTML = (Array.isArray(data.details) ? data.details : []).map(function (item) {
-            return '<li>' + safeText(item) + '</li>';
-        }).join('');
-        section.classList.remove('hidden');
-    }
-
-    function getBreachEmailValue() {
-        const emailNode = byId('breachEmailInput');
-        if (emailNode) emailNode.blur();
-        return emailNode ? emailNode.value.trim().toLowerCase() : '';
-    }
-
-    function submitEmailBreachForm(event) {
-        const email = getBreachEmailValue();
-        if (!email) {
-            if (event) event.preventDefault();
-            alert('Email is required. Please retype and try again.');
-            return false;
-        }
-        if (!validEmail(email)) {
-            if (event) event.preventDefault();
-            alert('Invalid email format. Please retype and try again.');
-            return false;
-        }
-
-        var btn = byId('breachOpenHibpBtn');
-        if (btn) {
-            btn.classList.add('breach-btn-active');
-            window.setTimeout(function () { btn.classList.remove('breach-btn-active'); }, 360);
-        }
-
-        var local = computeLocalRisk(email);
-        var targetUrl = 'https://haveibeenpwned.com/?Account=' + encodeURIComponent(email);
-        renderOutput({
-            score: local.score,
-            status: local.status,
-            message: 'Opening live email breach check page...',
-            details: [
-                'Email: ' + email,
-                'Domain analyzed: ' + local.domain,
-                'Destination: ' + targetUrl
-            ].concat(local.notes)
-        });
-
-        if (typeof window.updateModuleInsight === 'function') {
-            window.updateModuleInsight({
-                score: local.score,
-                status: local.status,
-                message: 'HIBP live page is opening now.',
-                suggestions: local.notes.slice(0, 4)
-            });
-        }
-
-        return true;
-    }
-
-    window.checkEmailBreach = function checkEmailBreach() {
-        const email = getBreachEmailValue();
-        if (!submitEmailBreachForm()) return false;
-        window.location.assign('https://haveibeenpwned.com/?Account=' + encodeURIComponent(email));
-        return false;
-    };
-    window.submitEmailBreachForm = submitEmailBreachForm;
-
-    function bind() {
-        var input = byId('breachEmailInput');
-        if (input && !input.dataset.bound) {
-            input.dataset.bound = '1';
-            input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    window.checkEmailBreach();
-                }
-            });
-        }
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', bind);
-    } else {
-        bind();
-    }
-    renderOutput({
-        score: 0,
-        status: 'READY',
-        message: 'Enter email and click button to run.',
-        details: [
-            'Result panel is active.',
-            'Output updates immediately after click.',
-            'Allow popup if browser blocks new tab.'
-        ]
+        emailInput.value = email;
     });
 })();
 </script>

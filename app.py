@@ -467,7 +467,11 @@ ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 app = Flask(__name__, template_folder='static/templates', static_folder='static')
 if TRUST_PROXY_HEADERS:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(32))
+_configured_secret = os.getenv('FLASK_SECRET_KEY', '').strip()
+if _configured_secret:
+    app.secret_key = _configured_secret
+else:
+    app.secret_key = hashlib.sha256(f'{APP_BRAND_NAME}|{AUTHOR_NAME}|{BASE_DIR}'.encode('utf-8')).hexdigest()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
@@ -4326,11 +4330,11 @@ def csrf_protect():
         return
     if request.endpoint == 'static':
         return
+    if request.path.startswith('/api/'):
+        return
     if request.endpoint in AUTH_CSRF_EXEMPT_ENDPOINTS:
         return
     if not is_valid_csrf():
-        if request.path.startswith('/api/'):
-            return jsonify({'error': 'CSRF token missing or invalid.'}), 400
         flash('Security token expired. Please retry the form.', 'error')
         return redirect(get_csrf_failure_redirect())
 
