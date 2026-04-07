@@ -1663,6 +1663,9 @@
 
     function renderFaceEmotionBadge(emotion) {
         const node = byId('faceEmotionBadge');
+        const heroLabel = byId('faceEmotionHeroLabel');
+        const heroConfidence = byId('faceEmotionHeroConfidence');
+        const heroCategory = byId('faceEmotionHeroCategory');
         if (!node) return;
         const data = emotion && typeof emotion === 'object' ? emotion : {};
         const label = String(data.display_label || data.label || '').trim();
@@ -1670,12 +1673,19 @@
         if (!label) {
             node.textContent = 'Emotion: Waiting';
             node.className = 'face-emotion-badge';
+            if (heroLabel) heroLabel.textContent = 'Waiting';
+            if (heroConfidence) heroConfidence.textContent = '0%';
+            if (heroCategory) heroCategory.textContent = 'Neutral';
             return;
         }
+        const category = getFaceEmotionCategory(label);
         node.textContent = confidence > 0
             ? ('Emotion: ' + label + ' (' + Math.round(confidence) + '%)')
             : ('Emotion: ' + label);
         node.className = 'face-emotion-badge ready';
+        if (heroLabel) heroLabel.textContent = label;
+        if (heroConfidence) heroConfidence.textContent = Math.round(confidence) + '%';
+        if (heroCategory) heroCategory.textContent = category;
     }
 
     function getFaceEmotionCategory(label) {
@@ -1806,24 +1816,19 @@
         const publicEmotion = publicData && publicData.emotion ? publicData.emotion : {};
         const bestEmotion = bestCandidate && bestCandidate.data && bestCandidate.data.emotion ? bestCandidate.data.emotion : publicEmotion;
         const selectedPreview = getSelectedFacePreviewSrc();
-        const fallbackSaved = (cachedLocalFaceItems || []).find(function (item) {
-            return !!getMatchPreviewSrc(item);
-        }) || null;
         renderFaceEmotionBadge(bestEmotion);
 
         if (!bestCandidate) {
             renderLiveStagePreview('faceUploadedPreview', (publicData || {}).query_preview || selectedPreview, 'Your Pic', 'Your uploaded face');
-            renderLiveStagePreview('faceMatchedPreview', fallbackSaved ? getMatchPreviewSrc(fallbackSaved) : '', 'DB Match', 'Matching database face');
+            renderLiveStagePreview('faceMatchedPreview', '', 'DB Match', 'Matching database face');
             if (bestPercent) bestPercent.textContent = '0%';
-            if (bestName) bestName.textContent = fallbackSaved ? 'No strong match found - showing saved DB face' : 'No strong database match found';
-            if (liveMessage) liveMessage.textContent = fallbackSaved
-                ? 'A saved database face is shown for manual review. Save more clear face photos to improve matching.'
-                : 'Try a clearer front-facing photo or save more database faces first.';
+            if (bestName) bestName.textContent = 'No strong database match found';
+            if (liveMessage) liveMessage.textContent = 'Try a clearer front-facing photo or refresh your saved face database before running again.';
             return;
         }
 
         renderLiveStagePreview('faceUploadedPreview', bestCandidate.data.query_preview || selectedPreview, 'Your Pic', 'Your uploaded face');
-        renderLiveStagePreview('faceMatchedPreview', getMatchPreviewSrc(bestCandidate.match) || (fallbackSaved ? getMatchPreviewSrc(fallbackSaved) : ''), 'DB Match', 'Best matching database face');
+        renderLiveStagePreview('faceMatchedPreview', getMatchPreviewSrc(bestCandidate.match), 'DB Match', 'Best matching database face');
         if (bestPercent) bestPercent.textContent = String(Math.round(Number(bestCandidate.match.score || 0))) + '%';
         if (bestName) bestName.textContent = String(bestCandidate.match.name || 'Best match') + ' from ' + String(bestCandidate.source || 'database');
         if (liveMessage) liveMessage.textContent = String(bestCandidate.data.message || 'Comparison completed. Review your pic and the matching DB pic below.');
@@ -2112,6 +2117,14 @@
                         : 'No saved faces are available yet. Save one known face first.',
                     count ? 'safe' : 'warning'
                 );
+                if (!silent) {
+                    showAppDialog(
+                        count
+                            ? ('Saved face database refreshed successfully. ' + count + ' profile(s) are ready now.')
+                            : 'Saved face database is empty right now.',
+                        'Face Database'
+                    );
+                }
                 return payload;
             })
             .catch(function (err) {
@@ -2123,6 +2136,22 @@
             .finally(function () {
                 setFaceActionBusy('refreshFaceIntelBtn', false);
             });
+    };
+
+    window.clearFaceIntelForm = function clearFaceIntelForm() {
+        const fileInput = byId('faceImageInput');
+        const nameInput = byId('facePersonName');
+        const consent = byId('faceConsentCheck');
+        if (fileInput) {
+            fileInput.value = '';
+            if (fileInput.dataset) fileInput.dataset.previewSrc = '';
+        }
+        if (nameInput) nameInput.value = '';
+        if (consent) consent.checked = false;
+        renderFaceEmotionBadge({});
+        renderFaceLiveStage(null, {});
+        setFaceInputNotice('Face form cleared. Upload a new clear face photo to continue.', 'safe');
+        showAppDialog('Face form cleared successfully.', 'Face Intel');
     };
 
     window.saveLocalFaceProfile = function saveLocalFaceProfile() {
@@ -2145,10 +2174,10 @@
                     message: data.message || 'Known face saved successfully.',
                     suggestions: ['Use a clear front-facing image for better local matching.', 'Save one face per person for clean results.']
                 });
-                alert(data.message || 'Known face saved successfully.');
+                showAppDialog(data.message || 'Known face saved successfully.', 'Face Database');
             })
             .catch(function (err) {
-                alert((err && err.message) ? err.message : 'Could not save the known face.');
+                showAppDialog((err && err.message) ? err.message : 'Could not save the known face.', 'Face Database');
             })
             .finally(function () {
                 setFaceActionBusy('saveFaceIntelBtn', false);
@@ -2244,7 +2273,30 @@
                 });
             })
             .catch(function (err) {
-                alert((err && err.message) ? err.message : 'Could not delete the saved face profile.');
+                showAppDialog((err && err.message) ? err.message : 'Could not delete the saved face profile.', 'Face Database');
+            });
+    };
+
+    window.clearAllSavedFaceProfiles = function clearAllSavedFaceProfiles() {
+        if (!window.confirm('Clear all saved face profiles from your database?')) return;
+        setFaceActionBusy('clearSavedFacesBtn', true, '<i class="fas fa-spinner fa-spin"></i> Clearing...');
+        apiFetchJson('/api/face-intel/local-clear', {
+            method: 'POST',
+            headers: jsonHeaders(),
+            body: JSON.stringify({})
+        })
+            .then(function (data) {
+                cachedLocalFaceItems = [];
+                renderLocalFaceList({ items: [] });
+                renderFaceLiveStage(null, {});
+                setFaceInputNotice(data.message || 'All saved faces were cleared.', 'safe');
+                showAppDialog(data.message || 'All saved faces were cleared.', 'Face Database');
+            })
+            .catch(function (err) {
+                showAppDialog((err && err.message) ? err.message : 'Could not clear saved face profiles.', 'Face Database');
+            })
+            .finally(function () {
+                setFaceActionBusy('clearSavedFacesBtn', false);
             });
     };
 
@@ -2257,6 +2309,8 @@
         var saveBtn = byId('saveFaceIntelBtn');
         var compareBtn = byId('compareFaceIntelBtn');
         var refreshBtn = byId('refreshFaceIntelBtn');
+        var clearBtn = byId('clearFaceIntelBtn');
+        var clearSavedBtn = byId('clearSavedFacesBtn');
         if (runBtn && !runBtn.dataset.boundFaceIntel) {
             runBtn.dataset.boundFaceIntel = '1';
             runBtn.addEventListener('click', function () {
@@ -2279,6 +2333,18 @@
             refreshBtn.dataset.boundFaceIntel = '1';
             refreshBtn.addEventListener('click', function () {
                 window.refreshLocalFaceProfiles();
+            });
+        }
+        if (clearBtn && !clearBtn.dataset.boundFaceIntel) {
+            clearBtn.dataset.boundFaceIntel = '1';
+            clearBtn.addEventListener('click', function () {
+                window.clearFaceIntelForm();
+            });
+        }
+        if (clearSavedBtn && !clearSavedBtn.dataset.boundFaceIntel) {
+            clearSavedBtn.dataset.boundFaceIntel = '1';
+            clearSavedBtn.addEventListener('click', function () {
+                window.clearAllSavedFaceProfiles();
             });
         }
         var fileInput = byId('faceImageInput');

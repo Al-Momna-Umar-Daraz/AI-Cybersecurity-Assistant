@@ -38,11 +38,33 @@
                 </label>
             </div>
             <div id="faceInputNotice" class="face-input-notice">Upload one clear front-facing photo, tick consent, then run the scan.</div>
+            <div class="face-emotion-panel">
+                <div class="face-emotion-panel-head">
+                    <span class="hero-panel-label">Detected Emotion</span>
+                    <div id="faceEmotionBadge" class="face-emotion-badge">Emotion: Waiting</div>
+                </div>
+                <div class="face-emotion-panel-grid">
+                    <div class="face-emotion-panel-stat">
+                        <span>Emotion</span>
+                        <strong id="faceEmotionHeroLabel">Waiting</strong>
+                    </div>
+                    <div class="face-emotion-panel-stat">
+                        <span>Confidence</span>
+                        <strong id="faceEmotionHeroConfidence">0%</strong>
+                    </div>
+                    <div class="face-emotion-panel-stat">
+                        <span>Category</span>
+                        <strong id="faceEmotionHeroCategory">Neutral</strong>
+                    </div>
+                </div>
+            </div>
             <div class="settings-actions">
                 <button id="runFaceIntelBtn" type="button" class="btn-analyze"><i class="fas fa-bolt"></i> Run Full Face Check</button>
                 <button id="saveFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-user-plus"></i> Save To Database</button>
                 <button id="compareFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-user-check"></i> Compare Local Faces</button>
                 <button id="refreshFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-rotate"></i> Refresh Saved Faces</button>
+                <button id="clearFaceIntelBtn" type="button" class="btn-secondary"><i class="fas fa-eraser"></i> Clear Form</button>
+                <button id="clearSavedFacesBtn" type="button" class="btn-secondary btn-danger"><i class="fas fa-trash"></i> Clear Saved Faces</button>
             </div>
             <p class="muted-text">Full check tries public scan, local database, and trained gallery in one run. If public scan is offline, local comparison still continues.</p>
         </div>
@@ -50,7 +72,7 @@
         <div id="faceLiveStage" class="face-live-stage">
             <div class="face-live-head">
                 <p class="hero-panel-label">Best Match Preview</p>
-                <div id="faceEmotionBadge" class="face-emotion-badge">Emotion: Waiting</div>
+                <div class="face-live-db-chip">DB compare preview</div>
             </div>
             <div class="face-live-compare">
                 <div class="face-live-pane">

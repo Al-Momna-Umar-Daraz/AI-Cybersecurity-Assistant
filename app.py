@@ -1318,6 +1318,23 @@ def delete_local_face_record(user_id, record_id):
     }
 
 
+def clear_local_face_records(user_id):
+    records = load_local_face_records(user_id)
+    for record in records:
+        path = resolve_local_face_image_path(record)
+        if path is not None:
+            try:
+                path.unlink()
+            except Exception:
+                pass
+    save_local_face_records(user_id, [])
+    return {
+        'ok': True,
+        'message': 'All saved face profiles were cleared successfully.',
+        'count': 0,
+    }
+
+
 def compare_local_face_database(user_id, file_storage):
     image_info = read_image_upload(file_storage, required=True)
     if not image_info.get('ok'):
@@ -5224,6 +5241,12 @@ def local_face_delete_api():
     if not result.get('ok'):
         return jsonify(result), 400
     return jsonify(result)
+
+
+@app.route('/api/face-intel/local-clear', methods=['POST'])
+@api_login_required
+def local_face_clear_api():
+    return jsonify(clear_local_face_records(int(g.user['id'])))
 
 
 @app.route('/api/analysis-summary', methods=['GET'])
