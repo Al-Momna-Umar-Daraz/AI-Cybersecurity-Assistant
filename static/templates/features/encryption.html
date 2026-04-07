@@ -32,14 +32,6 @@
                 <i class="fas fa-eye"></i>
             </button>
         </div>
-        <div class="encryption-secret-actions">
-            <button id="encryptionGenerateKeyBtn" type="button" class="btn-secondary">
-                <i class="fas fa-key"></i> Generate Key
-            </button>
-            <button id="encryptionCopyKeyBtn" type="button" class="btn-secondary">
-                <i class="fas fa-copy"></i> Copy Key
-            </button>
-        </div>
 
         <label for="encryptionTextInput" id="encryptionTextLabel">Input Text</label>
         <textarea id="encryptionTextInput" placeholder="Example: Hello Cyber World"></textarea>
@@ -55,15 +47,19 @@
             <h3 id="encryptionOutputLabel">Output</h3>
             <textarea id="encryptionOutput" readonly></textarea>
             <small class="muted-text">Your result will appear here.</small>
-            <div class="encryption-output-actions">
-                <button id="encryptionUseOutputBtn" type="button" class="btn-secondary">
-                    <i class="fas fa-unlock-alt"></i> Use Output For Decrypt
-                </button>
-            </div>
         </div>
 
-        <div class="toolbar-row mt-1">
+        <div class="toolbar-row mt-1 encryption-toolbar">
+            <button id="encryptionGenerateKeyBtn" type="button" class="btn-secondary">
+                <i class="fas fa-key"></i> Generate Key
+            </button>
+            <button id="encryptionCopyKeyBtn" type="button" class="btn-secondary">
+                <i class="fas fa-copy"></i> Copy Key
+            </button>
             <button id="encryptionRunBtn" type="button" class="btn-analyze"><i class="fas fa-cogs"></i> Run Tool</button>
+            <button id="encryptionUseOutputBtn" type="button" class="btn-secondary">
+                <i class="fas fa-unlock-alt"></i> Use Output For Decrypt
+            </button>
             <button id="encryptionCopyBtn" type="button" class="btn-secondary"><i class="fas fa-copy"></i> Copy Output</button>
             <button id="encryptionClearBtn" type="button" class="btn-secondary"><i class="fas fa-eraser"></i> Clear</button>
         </div>

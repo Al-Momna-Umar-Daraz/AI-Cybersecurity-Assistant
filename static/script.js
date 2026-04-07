@@ -106,8 +106,55 @@
         return fetch(url, options).then(parseApiJsonResponse);
     }
 
+    function ensureAppDialog() {
+        var backdrop = byId('appDialogBackdrop');
+        if (backdrop) return backdrop;
+        backdrop = document.createElement('div');
+        backdrop.id = 'appDialogBackdrop';
+        backdrop.className = 'app-dialog-backdrop hidden';
+        backdrop.innerHTML = '' +
+            '<div class="app-dialog" role="dialog" aria-modal="true" aria-labelledby="appDialogTitle">' +
+            '<button type="button" class="app-dialog-close" id="appDialogClose" aria-label="Close message"><i class="fas fa-times"></i></button>' +
+            '<div class="app-dialog-badge"><i class="fas fa-shield-alt"></i> Security Message</div>' +
+            '<h3 id="appDialogTitle" class="app-dialog-title">Notice</h3>' +
+            '<p id="appDialogMessage" class="app-dialog-message"></p>' +
+            '<div class="app-dialog-actions">' +
+            '<button type="button" class="btn-analyze app-dialog-ok" id="appDialogOkBtn">OK</button>' +
+            '</div>' +
+            '</div>';
+        document.body.appendChild(backdrop);
+        backdrop.addEventListener('click', function (event) {
+            if (event.target === backdrop) hideAppDialog();
+        });
+        var closeBtn = byId('appDialogClose');
+        if (closeBtn) closeBtn.addEventListener('click', hideAppDialog);
+        var okBtn = byId('appDialogOkBtn');
+        if (okBtn) okBtn.addEventListener('click', hideAppDialog);
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') hideAppDialog();
+        });
+        return backdrop;
+    }
+
+    function showAppDialog(message, title) {
+        var backdrop = ensureAppDialog();
+        var titleNode = byId('appDialogTitle');
+        var messageNode = byId('appDialogMessage');
+        if (titleNode) titleNode.textContent = String(title || 'Notice');
+        if (messageNode) messageNode.textContent = String(message || 'Please review the latest system message.');
+        backdrop.classList.remove('hidden');
+        document.body.classList.add('dialog-open');
+    }
+
+    function hideAppDialog() {
+        var backdrop = byId('appDialogBackdrop');
+        if (!backdrop) return;
+        backdrop.classList.add('hidden');
+        document.body.classList.remove('dialog-open');
+    }
+
     function showInvalidInput(message) {
-        alert(String(message || 'Invalid input.') + ' Please retype and try again.');
+        showAppDialog(String(message || 'Invalid input.') + ' Please retype and try again.', 'Action Needed');
     }
 
     function setFaceInputNotice(message, type) {
@@ -1135,6 +1182,9 @@
         if (node) node.textContent = String(value || '');
     }
 
+    var lastEncryptionSecret = '';
+    var lastEncryptionOutput = '';
+
     function generateEncryptionKey() {
         var length = 24;
         var charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
@@ -1192,7 +1242,7 @@
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(value).then(function () {
-                alert('Output copied successfully.');
+                showAppDialog('Output copied successfully.', 'Output Ready');
             }).catch(function () {
                 showInvalidInput('Copy failed. Please copy manually.');
             });
@@ -1205,7 +1255,7 @@
         }
         try {
             document.execCommand('copy');
-            alert('Output copied successfully.');
+            showAppDialog('Output copied successfully.', 'Output Ready');
         } catch (_) {
             showInvalidInput('Copy failed. Please copy manually.');
         }
@@ -1221,6 +1271,8 @@
         if (textNode) textNode.value = '';
         if (secretNode) secretNode.value = '';
         if (outputNode) outputNode.value = getEncryptionOutputPlaceholder();
+        lastEncryptionSecret = '';
+        lastEncryptionOutput = '';
         syncEncryptionDecryptPreview('');
 
         setEncryptionText('encryptionScoreValue', '0');
@@ -1317,11 +1369,12 @@
         if (!secretNode) return;
         var key = generateEncryptionKey();
         secretNode.value = key;
+        lastEncryptionSecret = key;
         secretNode.type = 'text';
         var secretToggle = byId('encryptionSecretToggle');
         if (secretToggle) secretToggle.innerHTML = '<i class="fas fa-eye-slash"></i>';
         setEncryptionText('encryptionStatus', 'READY');
-        setEncryptionText('encryptionMessage', 'New secret key generated. Save this key to decrypt your message later.');
+        setEncryptionText('encryptionMessage', 'New secret key generated. Use this same key for both encrypt and decrypt.');
     };
 
     window.copyEncryptionKey = function copyEncryptionKey() {
@@ -1357,29 +1410,43 @@
         var outputNode = byId('encryptionOutput');
         var actionNode = byId('encryptionActionInput');
         var textNode = byId('encryptionTextInput');
+        var secretNode = byId('encryptionSecretInput');
         var outputValue = outputNode ? String(outputNode.value || '').trim() : '';
         if (!outputValue || isEncryptionOutputPlaceholder(outputValue)) {
             return showInvalidInput('First generate encrypted output, then use this button for decryption.');
         }
         if (actionNode) actionNode.value = 'decrypt_text';
         if (textNode) textNode.value = outputValue;
+        if (secretNode && !String(secretNode.value || '').trim() && lastEncryptionSecret) {
+            secretNode.value = lastEncryptionSecret;
+        }
         syncEncryptionDecryptPreview(outputValue);
         syncEncryptionActionUi();
         if (textNode) textNode.focus();
         setEncryptionText('encryptionStatus', 'READY');
-        setEncryptionText('encryptionMessage', 'Cipher text loaded. Enter the same secret key and click Run Tool.');
+        setEncryptionText('encryptionMessage', 'Cipher text loaded. Your last secret key was filled in if available. Click Run Tool to get your message back.');
     };
 
     window.runEncryptionTool = function runEncryptionTool() {
         var action = (byId('encryptionActionInput') || {}).value || 'sha256';
         var text = (byId('encryptionTextInput') || {}).value || '';
-        var secret = (byId('encryptionSecretInput') || {}).value || '';
+        var secretNode = byId('encryptionSecretInput');
+        var secret = (secretNode || {}).value || '';
         var meta = getEncryptionActionMeta(action);
+        var actionKey = String(action || '').trim().toLowerCase();
+        var textValue = String(text || '').trim();
+        var secretValue = String(secret || '').trim();
 
-        if (!String(text).trim()) return showInvalidInput('Input text is empty.');
+        if (actionKey === 'decrypt_text' && !secretValue && lastEncryptionSecret && textValue && textValue === String(lastEncryptionOutput || '').trim()) {
+            secretValue = lastEncryptionSecret;
+            secret = secretValue;
+            if (secretNode) secretNode.value = secretValue;
+        }
+
+        if (!textValue) return showInvalidInput('Input text is empty.');
         if (String(text).length > 20000) return showInvalidInput('Input is too long. Maximum allowed is 20,000 characters.');
-        if (meta.secretRequired && !String(secret).trim()) return showInvalidInput('Secret key is required for this operation.');
-        if (meta.secretRequired && String(secret).trim().length < 6) return showInvalidInput('Secret key must be at least 6 characters.');
+        if (meta.secretRequired && !secretValue) return showInvalidInput('Secret key is required for this operation.');
+        if (meta.secretRequired && secretValue.length < 6) return showInvalidInput('Secret key must be at least 6 characters.');
 
         setEncryptionBusy(true);
         setEncryptionText('encryptionStatus', 'PROCESSING');
@@ -1388,7 +1455,7 @@
         apiFetchJson('/api/encryption-tool', {
             method: 'POST',
             headers: jsonHeaders(),
-            body: JSON.stringify({ action: action, text: text, secret: secret })
+            body: JSON.stringify({ action: action, text: text, secret: secretValue })
         })
             .then(function (data) {
                 var score = Number(data.score || 0);
@@ -1407,7 +1474,11 @@
 
                 var outputNode = byId('encryptionOutput');
                 if (outputNode) outputNode.value = output || 'No textual output generated by this operation.';
-                if (String(action).trim().toLowerCase() === 'decrypt_text') {
+                if (actionKey === 'encrypt_text') {
+                    lastEncryptionSecret = secretValue;
+                    lastEncryptionOutput = output;
+                    syncEncryptionDecryptPreview('');
+                } else if (actionKey === 'decrypt_text') {
                     syncEncryptionDecryptPreview(text);
                 } else {
                     syncEncryptionDecryptPreview('');
@@ -1443,7 +1514,7 @@
                 setEncryptionText('encryptionProcessedAt', (new Date()).toLocaleTimeString());
                 renderEncryptionNotes([message, 'Retype input and try again with valid format.']);
                 updateModuleInsight({ score: 45, status: 'WARNING', message: message });
-                alert(message + ' Please retype and try again.');
+                showAppDialog(message + ' Please retype and try again.', 'Encryption Error');
             })
             .finally(function () {
                 setEncryptionBusy(false);
