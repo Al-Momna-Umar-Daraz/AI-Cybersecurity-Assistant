@@ -1499,6 +1499,18 @@ def is_valid_csrf():
     return bool(expected and supplied and secrets.compare_digest(str(expected), str(supplied)))
 
 
+def get_csrf_failure_redirect():
+    auth_redirects = {
+        'login': 'login',
+        'register': 'register',
+        'forgot_password': 'forgot_password',
+    }
+    if request.endpoint in auth_redirects:
+        rotate_csrf_token()
+        return url_for(auth_redirects[request.endpoint])
+    return get_safe_redirect_target(request.referrer, fallback_endpoint='home')
+
+
 def record_security_event(event_type, event_key):
     now_ts = int(time.time())
     conn = None
@@ -4295,8 +4307,8 @@ def csrf_protect():
     if not is_valid_csrf():
         if request.path.startswith('/api/'):
             return jsonify({'error': 'CSRF token missing or invalid.'}), 400
-        flash('Security token invalid. Please try again.', 'error')
-        return redirect(get_safe_redirect_target(request.referrer, fallback_endpoint='home'))
+        flash('Security token expired. Please retry the form.', 'error')
+        return redirect(get_csrf_failure_redirect())
 
 
 @app.after_request
@@ -4308,6 +4320,10 @@ def apply_security_headers(response):
     response.headers['Origin-Agent-Cluster'] = '?1'
     response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    if request.endpoint in {'login', 'register', 'forgot_password'} and response.content_type.startswith('text/html'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
     nonce = getattr(g, 'csp_nonce', '')
     script_src = f"script-src 'self' 'unsafe-inline' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com"
