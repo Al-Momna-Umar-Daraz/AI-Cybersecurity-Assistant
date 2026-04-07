@@ -1511,6 +1511,16 @@ def get_csrf_failure_redirect():
     return get_safe_redirect_target(request.referrer, fallback_endpoint='home')
 
 
+AUTH_CSRF_EXEMPT_ENDPOINTS = {
+    'login',
+    'register',
+    'logout',
+    'forgot_password',
+    'public_request_password_code_api',
+    'public_change_password_with_code_api',
+}
+
+
 def record_security_event(event_type, event_key):
     now_ts = int(time.time())
     conn = None
@@ -4303,6 +4313,8 @@ def csrf_protect():
     if request.method not in {'POST', 'PUT', 'PATCH', 'DELETE'}:
         return
     if request.endpoint == 'static':
+        return
+    if request.endpoint in AUTH_CSRF_EXEMPT_ENDPOINTS:
         return
     if not is_valid_csrf():
         if request.path.startswith('/api/'):

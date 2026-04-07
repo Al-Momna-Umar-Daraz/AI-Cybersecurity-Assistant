@@ -20,7 +20,12 @@
                 <input id="identifier" name="identifier" type="text" required placeholder="you@gmail.com">
 
                 <label for="password">Password</label>
-                <input id="password" name="password" type="password" required placeholder="Enter password">
+                <div class="password-field-wrap">
+                    <input id="password" name="password" type="password" required placeholder="Enter password">
+                    <button type="button" class="password-toggle-btn" data-toggle-password="password" aria-label="Show password">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
                 <div class="auth-inline-link">
                     <a href="/forgot-password">Forgot Password?</a>
                 </div>
