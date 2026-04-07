@@ -1576,8 +1576,9 @@ def check_rate_limit(event_type, event_key, limit, window_seconds):
 
 
 def set_login_lock(lock_key, lock_until_ts):
-    conn = get_db_connection()
+    conn = None
     try:
+        conn = get_db_connection()
         conn.execute(
             '''
             INSERT INTO login_locks (lock_key, lock_until)
@@ -1587,14 +1588,18 @@ def set_login_lock(lock_key, lock_until_ts):
             (str(lock_key), int(lock_until_ts)),
         )
         conn.commit()
+    except sqlite3.Error:
+        return
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def get_login_lock_seconds(lock_key):
     now_ts = int(time.time())
-    conn = get_db_connection()
+    conn = None
     try:
+        conn = get_db_connection()
         row = conn.execute('SELECT lock_until FROM login_locks WHERE lock_key = ?', (str(lock_key),)).fetchone()
         if not row:
             return 0
@@ -1604,8 +1609,11 @@ def get_login_lock_seconds(lock_key):
             conn.commit()
             return 0
         return lock_until - now_ts
+    except sqlite3.Error:
+        return 0
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def get_login_lock_state(email, ip):
@@ -1626,14 +1634,18 @@ def record_login_failure(email, ip):
 
 
 def clear_login_failures(email, ip):
-    conn = get_db_connection()
+    conn = None
     try:
+        conn = get_db_connection()
         for key in (f'email:{email}', f'ip:{ip}'):
             conn.execute('DELETE FROM security_events WHERE event_type = ? AND event_key = ?', ('login_fail', key))
             conn.execute('DELETE FROM login_locks WHERE lock_key = ?', (key,))
         conn.commit()
+    except sqlite3.Error:
+        return
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def is_google_oauth_enabled():
